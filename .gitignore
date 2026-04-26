@@ -12,3 +12,7 @@ checkpoints/
 .idea/
 .vscode/
 *.log
+*.mp4
+*.mp4.ytdl
+*.png
+output_*

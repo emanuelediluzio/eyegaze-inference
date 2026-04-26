@@ -272,41 +272,109 @@ def _draw_eye_arrows(frame, left_eye, right_eye, yaw, pitch, length=120):
     dx = int(math.sin(yaw)    * length)
     dy = int(-math.sin(pitch) * length)
     for (ex, ey) in [p for p in (left_eye, right_eye) if p]:
-        cv2.circle(frame, (ex, ey), 4, (0, 200, 255), -1)
-        cv2.arrowedLine(frame, (ex, ey), (ex+dx, ey+dy),
-                        (0, 230, 60), 2, tipLength=0.3)
+        # Glowing iris dot
+        cv2.circle(frame, (ex, ey), 6, (0, 255, 200), -1)
+        cv2.circle(frame, (ex, ey), 8, (0, 200, 150), 1)
+        # Thick gaze arrow
+        end = (ex + dx, ey + dy)
+        cv2.arrowedLine(frame, (ex, ey), end, (0, 230, 60), 3, tipLength=0.25)
+        cv2.arrowedLine(frame, (ex, ey), end, (100, 255, 130), 1, tipLength=0.25)
 
 
 def _draw_gaze_arrow(frame, cx, cy, yaw, pitch, length=150):
     dx = int(math.sin(yaw)    * length)
     dy = int(-math.sin(pitch) * length)
-    cv2.arrowedLine(frame, (cx, cy), (cx+dx, cy+dy),
-                    (0, 230, 60), 3, tipLength=0.28)
+    end = (cx + dx, cy + dy)
+    cv2.arrowedLine(frame, (cx, cy), end, (0, 230, 60), 4, tipLength=0.22)
+    cv2.arrowedLine(frame, (cx, cy), end, (100, 255, 130), 2, tipLength=0.22)
 
 
 def _draw_gaze_dot(frame, sx, sy):
-    cv2.circle(frame, (sx, sy), 18, (0, 230, 60), 2)
-    cv2.circle(frame, (sx, sy),  5, (0, 230, 60), -1)
+    cv2.circle(frame, (sx, sy), 22, (0, 230, 60), 2)
+    cv2.circle(frame, (sx, sy), 14, (0, 230, 60), 1)
+    cv2.circle(frame, (sx, sy),  5, (0, 255, 80), -1)
 
 
-def _draw_distance(frame, info):
+def _draw_hud(frame, yaw, pitch, dist_info, pupil_info, show_dist, show_pupil):
+    """Draw a semi-transparent HUD panel with gaze metrics."""
     h, w = frame.shape[:2]
-    if info["cm"] is not None:
-        cv2.putText(frame, f"{info['cm']:.0f} cm",
-                    (w - 120, 35), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.85, info["color"], 2)
-    if info["label"]:
-        cv2.putText(frame, info["label"],
-                    (w//2 - 90, h - 20), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.9, info["color"], 2)
+    yaw_d = math.degrees(yaw)
+    pitch_d = math.degrees(pitch)
 
+    # Build info lines
+    lines = [f"Yaw  {yaw_d:+6.1f}", f"Pitch{pitch_d:+6.1f}"]
+
+    if show_dist and dist_info.get("cm") is not None:
+        lines.append(f"Dist  {dist_info['cm']:.0f}cm")
+    if show_pupil and pupil_info is not None:
+        lines.append(f"Iris  {pupil_info['mean_rel']:.3f}")
+
+    # Panel dimensions
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.55
+    thickness = 1
+    line_h = 22
+    pad = 8
+    panel_w = 160
+    panel_h = pad * 2 + line_h * len(lines)
+
+    # Semi-transparent background (top-left)
+    x0, y0 = 6, 6
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x0, y0), (x0 + panel_w, y0 + panel_h),
+                  (20, 20, 20), -1)
+    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+
+    # Border
+    cv2.rectangle(frame, (x0, y0), (x0 + panel_w, y0 + panel_h),
+                  (0, 200, 60), 1)
+
+    # Text
+    for i, line in enumerate(lines):
+        ty = y0 + pad + (i + 1) * line_h - 4
+        cv2.putText(frame, line, (x0 + pad, ty), font, font_scale,
+                    (0, 230, 80), thickness, cv2.LINE_AA)
+
+    # Distance alarm (center bottom, only if alarming)
+    if show_dist and dist_info.get("label"):
+        label = dist_info["label"]
+        color = dist_info["color"]
+        sz = cv2.getTextSize(label, font, 0.8, 2)[0]
+        tx = (w - sz[0]) // 2
+        ty = h - 18
+        # Background pill
+        cv2.rectangle(frame, (tx - 8, ty - sz[1] - 6), (tx + sz[0] + 8, ty + 6),
+                      (0, 0, 0), -1)
+        cv2.putText(frame, label, (tx, ty), font, 0.8, color, 2, cv2.LINE_AA)
+
+
+def _draw_face_box(frame, bbox, face_id=0):
+    """Draw a styled face bounding box."""
+    x, y, bw, bh = bbox
+    # Corner brackets instead of full rectangle
+    corner_len = min(20, bw // 4, bh // 4)
+    color = (0, 220, 180)
+
+    # Top-left
+    cv2.line(frame, (x, y), (x + corner_len, y), color, 2)
+    cv2.line(frame, (x, y), (x, y + corner_len), color, 2)
+    # Top-right
+    cv2.line(frame, (x + bw, y), (x + bw - corner_len, y), color, 2)
+    cv2.line(frame, (x + bw, y), (x + bw, y + corner_len), color, 2)
+    # Bottom-left
+    cv2.line(frame, (x, y + bh), (x + corner_len, y + bh), color, 2)
+    cv2.line(frame, (x, y + bh), (x, y + bh - corner_len), color, 2)
+    # Bottom-right
+    cv2.line(frame, (x + bw, y + bh), (x + bw - corner_len, y + bh), color, 2)
+    cv2.line(frame, (x + bw, y + bh), (x + bw, y + bh - corner_len), color, 2)
+
+
+# Keep old functions as stubs for gui.py imports
+def _draw_distance(frame, info):
+    pass
 
 def _draw_pupil(frame, info):
-    if info is None:
-        return
-    cv2.putText(frame, f"Iris {info['mean_rel']:.2f}",
-                (10, frame.shape[0] - 15),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.65, (180, 180, 255), 1)
+    pass
 
 
 # ---------------------------------------------------------------------------
