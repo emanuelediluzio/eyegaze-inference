@@ -36,10 +36,10 @@ class GazeDINO(nn.Module):
 
         self.head = nn.Sequential(
             nn.LayerNorm(embed_dim),
-            nn.Linear(embed_dim, 256),
+            nn.Linear(embed_dim, 512),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(256, 128),
+            nn.Linear(512, 128),
             nn.GELU(),
             nn.Dropout(dropout * 0.5),
             nn.Linear(128, 2),  # yaw, pitch
