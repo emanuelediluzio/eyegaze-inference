@@ -147,14 +147,34 @@ def run_calibration(
     cv2.setWindowProperty("Calibration", cv2.WND_PROP_FULLSCREEN,
                           cv2.WINDOW_FULLSCREEN)
 
-    # Detect screen size
-    dummy = np.zeros((10, 10, 3), dtype=np.uint8)
-    cv2.imshow("Calibration", dummy)
-    cv2.waitKey(1)
-    rect = cv2.getWindowImageRect("Calibration")
-    sw, sh = rect[2], rect[3]
+    # Detect screen size — use AppKit on macOS (Retina-safe), tkinter elsewhere
+    sw, sh = 0, 0
+    try:
+        from AppKit import NSScreen  # macOS only
+        screen = NSScreen.mainScreen().frame()
+        sw = int(screen.size.width)
+        sh = int(screen.size.height)
+    except ImportError:
+        pass
+    if sw <= 0 or sh <= 0:
+        try:
+            import tkinter as tk
+            _root = tk.Tk()
+            _root.withdraw()
+            sw = _root.winfo_screenwidth()
+            sh = _root.winfo_screenheight()
+            _root.destroy()
+        except Exception:
+            pass
+    if sw <= 0 or sh <= 0:
+        dummy = np.zeros((10, 10, 3), dtype=np.uint8)
+        cv2.imshow("Calibration", dummy)
+        cv2.waitKey(1)
+        rect = cv2.getWindowImageRect("Calibration")
+        sw, sh = rect[2], rect[3]
     if sw <= 0 or sh <= 0:
         sw, sh = 1920, 1080
+    print(f"[calib] Screen size: {sw}×{sh}")
 
     calibrator = GazeCalibrator(sw, sh)
     cap = cv2.VideoCapture(camera_id)
@@ -246,9 +266,26 @@ def run_calibration(
             )
         else:
             print(f"[calib] Point {idx + 1}: no face detected — skipped")
+            # Show warning on screen for 1 second
+            warn = np.zeros((sh, sw, 3), dtype=np.uint8)
+            cv2.putText(warn, f"Point {idx + 1}: face not detected — skipped",
+                        (sw // 2 - 340, sh // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 80, 255), 2)
+            cv2.putText(warn, "Make sure your face is well lit and visible",
+                        (sw // 2 - 310, sh // 2 + 50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (160, 160, 160), 1)
+            cv2.imshow("Calibration", warn)
+            cv2.waitKey(1000)
 
     cap.release()
     cv2.destroyAllWindows()
+
+    n_collected = len(calibrator._samples)
+    if n_collected < 6:
+        raise RuntimeError(
+            f"[calib] Only {n_collected}/9 points collected — need at least 6. "
+            "Check lighting and ensure your face is visible throughout."
+        )
 
     calibrator.fit()
     calibrator.save(save_path)
