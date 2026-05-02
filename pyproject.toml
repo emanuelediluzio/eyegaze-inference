@@ -1,0 +1,27 @@
+[project]
+name = "eyegaze-inference"
+version = "0.1.0"
+description = "Real-time gaze estimation with GazeDINO."
+authors = ["Emanuele Di Luzio <your@email.com>"]
+requires-python = ">=3.10"
+
+dependencies = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "opencv-python>=4.8.0",
+    "mediapipe>=0.10.0",
+    "numpy>=1.24.0",
+    "customtkinter>=5.2.0",
+    "Pillow>=10.0.0",
+    "scikit-learn"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "flake8"
+]
+extras = [
+    "matplotlib"
+]
