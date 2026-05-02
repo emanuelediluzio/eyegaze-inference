@@ -35,14 +35,11 @@ pip install -r requirements.txt
 mkdir checkpoints
 cp /path/to/best.pt checkpoints/
 
-# 3. Run inference (CLI)
-python infer_gaze.py --model checkpoints/best.pt
+# 3. Run (live camera)
+python gui.py
 
-# 4. Run inference (GUI)
-python gui.py --model checkpoints/best.pt
-
-# 5. With calibration
-python infer_gaze.py --model checkpoints/best.pt --calibrate
+# 4. Run on a video file
+python gui.py --video path/to/video.mp4
 ```
 
 ## CLI Options
@@ -53,30 +50,10 @@ python infer_gaze.py --model checkpoints/best.pt --calibrate
 | `--camera` | 0 | Camera index |
 | `--video` | none | Path to video file |
 | `--no-loop` | off | Don't loop video |
-| `--calibrate` | off | Run 9-point calibration at startup |
-| `--calib_file` | `calibration.pkl` | Load saved calibration |
-| `--ema` | 0.3 | EMA smoothing (0=frozen, 1=raw) |
-| `--arrow` | 120 | Gaze arrow length (px) |
-| `--no_distance` | off | Disable distance overlay |
-| `--no_pupil` | off | Disable pupillometry overlay |
 
 ## Controls
 
-### CLI (`infer_gaze.py`)
-
-| Key | Action |
-|-----|--------|
-| `Q` / `ESC` | Quit |
-| `C` | Run calibration |
-| `R` | Reset EMA + monitors |
-| `D` | Toggle distance overlay |
-| `P` | Toggle pupillometry overlay |
-| `SPACE` | Pause/resume (video mode) |
-| `LEFT/RIGHT` | Seek (video mode) |
-
-### GUI (`gui.py`)
-
-The GUI provides toggle switches for all overlays, calibrate/reset buttons, and video playback controls with a seek slider.
+The GUI provides toggle switches for all overlays (gaze arrows, distance, pupillometry), calibrate/reset buttons, and video playback controls with a seek slider.
 
 ## Project Structure
 
@@ -84,8 +61,8 @@ The GUI provides toggle switches for all overlays, calibrate/reset buttons, and 
 eyegaze-inference/
   models/
     gaze_model.py      # GazeDINO architecture (DINOv2 + MLP head)
-  infer_gaze.py        # CLI inference + FaceMesh analyzer + drawing
-  gui.py               # CustomTkinter GUI
+  infer_gaze.py        # Core: model, FaceMesh analyzer, EMA, drawing helpers
+  gui.py               # Main entry point — CustomTkinter GUI
   calibration.py       # 9-point gaze calibration
   requirements.txt
 ```
