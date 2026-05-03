@@ -1,8 +1,8 @@
 [project]
 name = "eyegaze-inference"
 version = "0.1.0"
-description = "Real-time gaze estimation with GazeDINO."
-authors = ["Emanuele Di Luzio <your@email.com>"]
+description = "Eye gaze inference with GUI and custom weights"
+authors = [{name = "Emanuele Di Luzio", email = "your@email.com"}]
 requires-python = ">=3.10"
 
 dependencies = [
@@ -13,15 +13,22 @@ dependencies = [
     "numpy>=1.24.0",
     "customtkinter>=5.2.0",
     "Pillow>=10.0.0",
-    "scikit-learn"
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "black",
-    "flake8"
+    "flake8",
 ]
 extras = [
-    "matplotlib"
+    "matplotlib",
 ]
+
+[tool.setuptools.packages.find]
+include = ["models*"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
