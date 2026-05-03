@@ -11,6 +11,7 @@ import argparse
 import math
 import threading
 import time
+import tkinter as tk
 import tkinter.filedialog as fd
 from pathlib import Path
 
@@ -55,6 +56,200 @@ def _make_switch(parent, text, command, default_on=True):
     if default_on:
         sw.select()
     return sw
+
+
+# ---------------------------------------------------------------------------
+# Calibration window (Tkinter-based, macOS-safe — runs on main thread)
+# ---------------------------------------------------------------------------
+
+class _CalibrationWindow(ctk.CTkToplevel):
+    POINTS = [
+        (0.1, 0.1), (0.5, 0.1), (0.9, 0.1),
+        (0.1, 0.5), (0.5, 0.5), (0.9, 0.5),
+        (0.1, 0.9), (0.5, 0.9), (0.9, 0.9),
+    ]
+    DWELL_MS = 2500
+    COLLECT_FRAC = 0.4  # start collecting after 40% of dwell
+
+    def __init__(self, parent, model, device, camera_id: int, on_done):
+        super().__init__(parent)
+        self.title("Calibration")
+        self.configure(fg_color="#000000")
+        self.attributes("-fullscreen", True)
+        self.lift()
+        self.focus_force()
+
+        self._model = model
+        self._device = device
+        self._on_done = on_done
+
+        self.update_idletasks()
+        self._sw = self.winfo_screenwidth()
+        self._sh = self.winfo_screenheight()
+
+        self._canvas = tk.Canvas(self, bg="#000000", highlightthickness=0)
+        self._canvas.pack(fill="both", expand=True)
+
+        # state
+        self._point_idx = -1  # -1 = instruction screen
+        self._t_start = 0.0
+        self._collected: list[tuple[float, float]] = []
+
+        from calibration import GazeCalibrator
+        self._calibrator = GazeCalibrator(self._sw, self._sh)
+
+        # camera
+        self._cap = cv2.VideoCapture(camera_id)
+
+        # face detector
+        import mediapipe as mp
+        self._fd = mp.solutions.face_detection.FaceDetection(
+            model_selection=1, min_detection_confidence=0.5)
+
+        # transform (same as training)
+        import torchvision.transforms as T
+        self._transform = T.Compose([
+            T.ToPILImage(),
+            T.Resize((224, 224)),
+            T.ToTensor(),
+            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ])
+
+        self.bind("<Escape>", lambda e: self._cancel())
+        self.bind("<space>", lambda e: self._on_space())
+
+        self._show_instructions()
+
+    # -- screens --------------------------------------------------------
+    def _show_instructions(self):
+        c = self._canvas
+        c.delete("all")
+        cx, cy = self._sw // 2, self._sh // 2
+        c.create_text(cx, cy - 40, text="Eye Gaze Calibration",
+                      fill="white", font=("SF Pro Display", 28, "bold"))
+        c.create_text(cx, cy + 10,
+                      text="Keep your head still. Follow each white dot with your eyes.",
+                      fill="#aaaaaa", font=("SF Pro Text", 16))
+        c.create_text(cx, cy + 55,
+                      text="Press SPACE to start  |  ESC to cancel",
+                      fill="#66cc66", font=("SF Pro Text", 14))
+
+    def _on_space(self):
+        if self._point_idx == -1:
+            self._advance_point()
+
+    # -- dot loop -------------------------------------------------------
+    def _advance_point(self):
+        # save data from previous point
+        if self._point_idx >= 0:
+            if self._collected:
+                rx, ry = self.POINTS[self._point_idx]
+                px, py = int(rx * self._sw), int(ry * self._sh)
+                mean_yaw = float(np.mean([s[0] for s in self._collected]))
+                mean_pitch = float(np.mean([s[1] for s in self._collected]))
+                self._calibrator.collect(mean_yaw, mean_pitch, float(px), float(py))
+                print(f"[calib] Point {self._point_idx + 1}: ({px},{py}) "
+                      f"yaw={mean_yaw:+.3f} pitch={mean_pitch:+.3f} "
+                      f"({len(self._collected)} samples)")
+            else:
+                print(f"[calib] Point {self._point_idx + 1}: no face — skipped")
+
+        self._point_idx += 1
+        if self._point_idx >= len(self.POINTS):
+            self._finish()
+            return
+
+        self._collected = []
+        self._t_start = time.time()
+        self._tick()
+
+    def _tick(self):
+        if not self.winfo_exists():
+            return
+
+        elapsed = time.time() - self._t_start
+        frac = min(elapsed / (self.DWELL_MS / 1000.0), 1.0)
+
+        rx, ry = self.POINTS[self._point_idx]
+        px, py = int(rx * self._sw), int(ry * self._sh)
+
+        c = self._canvas
+        c.delete("all")
+
+        # progress arc
+        r = 24
+        extent = int(360 * frac)
+        c.create_arc(px - r, py - r, px + r, py + r,
+                     start=90, extent=-extent,
+                     outline="#34c759", width=3, style="arc")
+        # white dot
+        c.create_oval(px - 13, py - 13, px + 13, py + 13,
+                      fill="white", outline="")
+        # black center
+        c.create_oval(px - 4, py - 4, px + 4, py + 4,
+                      fill="black", outline="")
+        # counter
+        c.create_text(self._sw // 2, self._sh - 35,
+                      text=f"Point {self._point_idx + 1} / {len(self.POINTS)}",
+                      fill="#999999", font=("SF Mono", 14))
+
+        # collect gaze sample
+        if elapsed > (self.DWELL_MS / 1000.0) * self.COLLECT_FRAC:
+            self._collect_sample()
+
+        if elapsed >= self.DWELL_MS / 1000.0:
+            self._advance_point()
+        else:
+            self.after(30, self._tick)
+
+    # -- sample collection ----------------------------------------------
+    def _collect_sample(self):
+        ret, frame = self._cap.read()
+        if not ret:
+            return
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w = frame_rgb.shape[:2]
+        res = self._fd.process(frame_rgb)
+        if not res.detections:
+            return
+        best = max(res.detections, key=lambda d: d.score[0])
+        bb = best.location_data.relative_bounding_box
+        x1 = max(0, int(bb.xmin * w))
+        y1 = max(0, int(bb.ymin * h))
+        x2 = min(w, x1 + int(bb.width * w))
+        y2 = min(h, y1 + int(bb.height * h))
+        if x2 <= x1 or y2 <= y1:
+            return
+        face_bgr = frame[y1:y2, x1:x2]
+        rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
+        inp = self._transform(rgb).unsqueeze(0).to(self._device)
+        with torch.inference_mode():
+            out = self._model(inp)[0].cpu().numpy()
+        self._collected.append((float(out[0]), float(out[1])))
+
+    # -- finish / cancel ------------------------------------------------
+    def _finish(self):
+        self._cap.release()
+        self._fd.close()
+        n = len(self._calibrator._samples)
+        if n >= 6:
+            try:
+                self._calibrator.fit()
+                self._calibrator.save()
+                self._on_done(self._calibrator)
+            except Exception as e:
+                print(f"[calib] Fit error: {e}")
+                self._on_done(None)
+        else:
+            print(f"[calib] Only {n}/9 points — need at least 6")
+            self._on_done(None)
+        self.destroy()
+
+    def _cancel(self):
+        self._cap.release()
+        self._fd.close()
+        self._on_done(None)
+        self.destroy()
 
 
 # ---------------------------------------------------------------------------
@@ -188,10 +383,8 @@ class GazeApp(ctk.CTk):
         # keyboard shortcuts
         self.bind("<q>", lambda e: self._on_close())
         self.bind("<Q>", lambda e: self._on_close())
-        self.bind("<c>", lambda e: threading.Thread(
-            target=self._run_calibration_thread, daemon=True).start())
-        self.bind("<C>", lambda e: threading.Thread(
-            target=self._run_calibration_thread, daemon=True).start())
+        self.bind("<c>", lambda e: self._start_calibration())
+        self.bind("<C>", lambda e: self._start_calibration())
         self.bind("<space>", lambda e: self._toggle_pause() if self._video_mode else None)
         self.bind("<Left>", lambda e: self._prev_face())
         self.bind("<Right>", lambda e: self._next_face())
@@ -209,7 +402,12 @@ class GazeApp(ctk.CTk):
         for w in self._sidebar.winfo_children():
             w.destroy()
 
-        sb = self._sidebar
+        scroll = ctk.CTkScrollableFrame(
+            self._sidebar, fg_color=SURFACE,
+            scrollbar_button_color="#333",
+            scrollbar_button_hover_color="#444")
+        scroll.pack(fill="both", expand=True)
+        sb = scroll
         px = 16
 
         # -- title
@@ -305,8 +503,7 @@ class GazeApp(ctk.CTk):
                       font=("SF Pro Text", 11), corner_radius=6,
                       fg_color=BORDER, hover_color="#333",
                       text_color=TEXT, border_width=1, border_color="#333",
-                      command=lambda: threading.Thread(
-                          target=self._run_calibration_thread, daemon=True).start()
+                      command=self._start_calibration
                       ).pack(side="left", fill="x", expand=True, padx=(0, 3))
 
         ctk.CTkButton(calib_btn_frame, text="Load", height=28,
@@ -369,9 +566,6 @@ class GazeApp(ctk.CTk):
         self._vid_frame = ctk.CTkFrame(sb, fg_color="transparent")
         self._vid_frame.pack(fill="x", padx=0, pady=0)
         self._rebuild_video_controls()
-
-        # spacer
-        ctk.CTkFrame(sb, fg_color="transparent").pack(fill="both", expand=True)
 
         # shortcuts hint
         ctk.CTkLabel(sb, text="C=Calibrate  Q=Quit  \u2190\u2192=Face",
@@ -743,70 +937,31 @@ class GazeApp(ctk.CTk):
     # ------------------------------------------------------------------
     # Calibration methods
     # ------------------------------------------------------------------
-    def _run_calibration_thread(self):
-        """Executed in a separate thread so it doesn't block the UI."""
-        import mediapipe as mp
-        import torchvision.transforms as T
-        from calibration import run_calibration
+    def _start_calibration(self):
+        """Open Tkinter-based calibration (runs on main thread — macOS safe)."""
+        from calibration import GazeCalibrator, CALIB_POINTS_9
 
-        # 1. Stop the processing loop
+        # pause processing and release camera
         self._calibrating = True
-        time.sleep(0.15)  # wait for loop to pause
-
-        # 2. Release camera so run_calibration can open it
+        time.sleep(0.15)
         if self._cap:
             self._cap.release()
             self._cap = None
 
-        fd_mp = mp.solutions.face_detection.FaceDetection(
-            model_selection=1, min_detection_confidence=0.5)
+        _CalibrationWindow(
+            parent=self,
+            model=self._model,
+            device=self._device,
+            camera_id=self._camera_id,
+            on_done=self._on_calibration_complete,
+        )
 
-        try:
-            # 3. Build model_fn and detector_fn
-            transform = T.Compose([
-                T.ToPILImage(),
-                T.Resize((224, 224)),
-                T.ToTensor(),
-                T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-            ])
-
-            def model_fn(face_bgr):
-                rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
-                inp = transform(rgb).unsqueeze(0).to(self._device)
-                with torch.no_grad():
-                    out = self._model(inp)[0].cpu().numpy()
-                return float(out[0]), float(out[1])
-
-            def detector_fn(frame_rgb):
-                h, w = frame_rgb.shape[:2]
-                res = fd_mp.process(frame_rgb)
-                if not res.detections:
-                    return None
-                best = max(res.detections, key=lambda d: d.score[0])
-                bb = best.location_data.relative_bounding_box
-                return (max(0, int(bb.xmin * w)), max(0, int(bb.ymin * h)),
-                        int(bb.width * w), int(bb.height * h))
-
-            # 4. Run calibration (opens its own VideoCapture)
-            self._calibrator = run_calibration(
-                model_fn, detector_fn, camera_id=self._camera_id)
-
-            # 5. Update UI on success
-            self.after(0, self._on_calibration_done, True)
-
-        except KeyboardInterrupt:
-            self.after(0, self._on_calibration_done, False)
-        except Exception as e:
-            print(f"[calib] Error: {e}")
-            self.after(0, self._on_calibration_done, False)
-        finally:
-            fd_mp.close()
-            # 6. Reopen camera for normal processing loop
-            self._open_source(self._video_path if self._video_mode else None)
-            self._calibrating = False
-
-    def _on_calibration_done(self, success: bool):
-        """Called on the main thread after calibration completes."""
+    def _on_calibration_complete(self, calibrator):
+        """Called when calibration finishes or is cancelled."""
+        if calibrator is not None:
+            self._calibrator = calibrator
+        self._open_source(self._video_path if self._video_mode else None)
+        self._calibrating = False
         self._update_calib_status()
 
     def _update_calib_status(self):
