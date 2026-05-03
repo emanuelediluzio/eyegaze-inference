@@ -34,12 +34,13 @@ CALIB_PATH_DEFAULT = "calibration.pkl"
 # ---------------------------------------------------------------------------
 
 def _poly2(yaw: np.ndarray, pitch: np.ndarray) -> np.ndarray:
-    """Build degree-2 polynomial feature matrix from yaw/pitch arrays."""
+    """Build degree-3 polynomial feature matrix from yaw/pitch arrays."""
     ones = np.ones_like(yaw, dtype=np.float64)
     return np.column_stack([
         ones,
         yaw, pitch,
         yaw ** 2, yaw * pitch, pitch ** 2,
+        yaw ** 3, yaw ** 2 * pitch, yaw * pitch ** 2, pitch ** 3,
     ])
 
 
@@ -64,9 +65,9 @@ class GazeCalibrator:
 
     # ------------------------------------------------------------------
     def fit(self):
-        if len(self._samples) < 6:
+        if len(self._samples) < 10:
             raise RuntimeError(
-                f"Need at least 6 calibration samples, got {len(self._samples)}."
+                f"Need at least 10 calibration samples, got {len(self._samples)}."
             )
         arr = np.array(self._samples, dtype=np.float64)
         yaws, pitches, sxs, sys_ = arr[:, 0], arr[:, 1], arr[:, 2], arr[:, 3]

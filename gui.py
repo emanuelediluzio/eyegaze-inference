@@ -64,28 +64,33 @@ def _make_switch(parent, text, command, default_on=True):
 
 class _CalibrationWindow(ctk.CTkToplevel):
     POINTS = [
-        (0.1, 0.1), (0.5, 0.1), (0.9, 0.1),
-        (0.1, 0.5), (0.5, 0.5), (0.9, 0.5),
-        (0.1, 0.9), (0.5, 0.9), (0.9, 0.9),
+        (0.08, 0.08), (0.37, 0.08), (0.63, 0.08), (0.92, 0.08),
+        (0.08, 0.37), (0.37, 0.37), (0.63, 0.37), (0.92, 0.37),
+        (0.08, 0.63), (0.37, 0.63), (0.63, 0.63), (0.92, 0.63),
+        (0.08, 0.92), (0.37, 0.92), (0.63, 0.92), (0.92, 0.92),
     ]
-    DWELL_MS = 2500
-    COLLECT_FRAC = 0.4  # start collecting after 40% of dwell
+    DWELL_MS = 2800
+    COLLECT_FRAC = 0.35  # start collecting after 35% of dwell
 
     def __init__(self, parent, model, device, camera_id: int, on_done):
         super().__init__(parent)
         self.title("Calibration")
         self.configure(fg_color="#000000")
-        self.attributes("-fullscreen", True)
+
+        # Get screen size before going fullscreen
+        self._sw = self.winfo_screenwidth()
+        self._sh = self.winfo_screenheight()
+
+        # macOS-safe fullscreen: use overrideredirect + explicit geometry
+        # (attributes("-fullscreen", True) crashes on macOS with CTkToplevel)
+        self.overrideredirect(True)
+        self.geometry(f"{self._sw}x{self._sh}+0+0")
         self.lift()
         self.focus_force()
 
         self._model = model
         self._device = device
         self._on_done = on_done
-
-        self.update_idletasks()
-        self._sw = self.winfo_screenwidth()
-        self._sh = self.winfo_screenheight()
 
         self._canvas = tk.Canvas(self, bg="#000000", highlightthickness=0)
         self._canvas.pack(fill="both", expand=True)
@@ -145,12 +150,21 @@ class _CalibrationWindow(ctk.CTkToplevel):
             if self._collected:
                 rx, ry = self.POINTS[self._point_idx]
                 px, py = int(rx * self._sw), int(ry * self._sh)
-                mean_yaw = float(np.mean([s[0] for s in self._collected]))
-                mean_pitch = float(np.mean([s[1] for s in self._collected]))
+                # filter outliers: remove samples > 1.5 std from median
+                arr = np.array(self._collected)
+                med = np.median(arr, axis=0)
+                dists = np.linalg.norm(arr - med, axis=1)
+                if len(arr) > 4:
+                    thresh = max(np.std(dists) * 1.5, 1e-6)
+                    mask = dists < thresh
+                    arr = arr[mask] if mask.sum() >= 3 else arr
+                mean_yaw = float(arr[:, 0].mean())
+                mean_pitch = float(arr[:, 1].mean())
                 self._calibrator.collect(mean_yaw, mean_pitch, float(px), float(py))
+                n_filt = len(self._collected) - len(arr)
                 print(f"[calib] Point {self._point_idx + 1}: ({px},{py}) "
                       f"yaw={mean_yaw:+.3f} pitch={mean_pitch:+.3f} "
-                      f"({len(self._collected)} samples)")
+                      f"({len(arr)} samples, {n_filt} filtered)")
             else:
                 print(f"[calib] Point {self._point_idx + 1}: no face — skipped")
 
@@ -232,7 +246,7 @@ class _CalibrationWindow(ctk.CTkToplevel):
         self._cap.release()
         self._fd.close()
         n = len(self._calibrator._samples)
-        if n >= 6:
+        if n >= 10:
             try:
                 self._calibrator.fit()
                 self._calibrator.save()
@@ -241,7 +255,7 @@ class _CalibrationWindow(ctk.CTkToplevel):
                 print(f"[calib] Fit error: {e}")
                 self._on_done(None)
         else:
-            print(f"[calib] Only {n}/9 points — need at least 6")
+            print(f"[calib] Only {n}/{len(self.POINTS)} points — need at least 10")
             self._on_done(None)
         self.destroy()
 
@@ -250,6 +264,71 @@ class _CalibrationWindow(ctk.CTkToplevel):
         self._fd.close()
         self._on_done(None)
         self.destroy()
+
+
+# ---------------------------------------------------------------------------
+# Screen gaze overlay — transparent dot that follows predicted gaze
+# ---------------------------------------------------------------------------
+
+class _GazeOverlay(ctk.CTkToplevel):
+    """Translucent dot showing where the user is looking on screen."""
+    SIZE = 28
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.overrideredirect(True)
+        self.attributes('-topmost', True)
+
+        s = self.SIZE
+        # macOS: transparent window background so only the dot is visible
+        try:
+            self.wm_attributes('-transparent', True)
+            bg = 'systemTransparent'
+        except Exception:
+            bg = '#000000'
+            self.attributes('-alpha', 0.8)
+
+        self._canvas = tk.Canvas(self, width=s, height=s,
+                                 bg=bg, highlightthickness=0)
+        self._canvas.pack()
+
+        # outer ring
+        self._canvas.create_oval(1, 1, s - 1, s - 1,
+                                 fill='', outline='#34c759', width=2)
+        # filled center
+        c = s // 2
+        self._canvas.create_oval(c - 5, c - 5, c + 5, c + 5,
+                                 fill='#34c759', outline='')
+        # white core
+        self._canvas.create_oval(c - 2, c - 2, c + 2, c + 2,
+                                 fill='white', outline='')
+
+        self.geometry(f'{s}x{s}')
+        self.withdraw()
+
+        # position EMA for extra smoothness
+        self._sx_ema: float | None = None
+        self._sy_ema: float | None = None
+        self._alpha = 0.5
+
+    def move_to(self, sx: int, sy: int):
+        if self._sx_ema is None:
+            self._sx_ema = float(sx)
+            self._sy_ema = float(sy)
+        else:
+            self._sx_ema = self._alpha * sx + (1 - self._alpha) * self._sx_ema
+            self._sy_ema = self._alpha * sy + (1 - self._alpha) * self._sy_ema
+
+        ix = int(self._sx_ema) - self.SIZE // 2
+        iy = int(self._sy_ema) - self.SIZE // 2
+        self.geometry(f'{self.SIZE}x{self.SIZE}+{ix}+{iy}')
+        if self.state() == 'withdrawn':
+            self.deiconify()
+
+    def hide(self):
+        self.withdraw()
+        self._sx_ema = None
+        self._sy_ema = None
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +343,8 @@ class GazeApp(ctk.CTk):
                  video_path: str | None = None):
         super().__init__()
         self.title("EyeGaze")
+        self.geometry("1280x800")
+        self.minsize(900, 600)
         self.configure(fg_color=BG)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         ctk.set_appearance_mode("dark")
@@ -294,6 +375,8 @@ class GazeApp(ctk.CTk):
         self._show_face_box = True
         self._show_arrows = True
         self._show_iris = True
+        self._show_screen_gaze = False
+        self._gaze_overlay: _GazeOverlay | None = None
 
         # data
         self._faces_data: list[dict] = []
@@ -520,6 +603,11 @@ class GazeApp(ctk.CTk):
                       command=self._clear_calibration
                       ).pack(side="left", fill="x", expand=True, padx=(3, 0))
 
+        self._sw_screen_gaze = _make_switch(
+            sb, "Screen gaze", self._toggle_screen_gaze, default_on=False)
+        self._sw_screen_gaze.pack(anchor="w", padx=px, pady=(8, 4))
+        self._sw_screen_gaze.configure(state="disabled")
+
         self._sep(sb, px)
 
         # -- overlay toggles
@@ -711,7 +799,7 @@ class GazeApp(ctk.CTk):
 
     def _get_ema(self, face_idx: int) -> EMA:
         if face_idx not in self._emas:
-            self._emas[face_idx] = EMA(alpha=0.3)
+            self._emas[face_idx] = EMA(alpha=0.25)
         return self._emas[face_idx]
 
     def _process_loop(self):
@@ -921,6 +1009,19 @@ class GazeApp(ctk.CTk):
             self._lbl_dist.configure(text="Distance  --", text_color=TEXT)
             self._lbl_pupil.configure(text="Iris      --")
 
+        # screen gaze overlay
+        if self._show_screen_gaze and self._faces_data:
+            f = self._faces_data[self._selected_face]
+            sxy = f.get("screen_xy")
+            if sxy is not None:
+                if self._gaze_overlay is None:
+                    self._gaze_overlay = _GazeOverlay(self)
+                self._gaze_overlay.move_to(sxy[0], sxy[1])
+            elif self._gaze_overlay:
+                self._gaze_overlay.hide()
+        elif self._gaze_overlay:
+            self._gaze_overlay.hide()
+
         # video
         if self._video_mode and hasattr(self, '_slider'):
             if not self._seeking:
@@ -965,15 +1066,23 @@ class GazeApp(ctk.CTk):
         self._update_calib_status()
 
     def _update_calib_status(self):
-        """Update the calibration status label in the sidebar."""
+        """Update the calibration status label and screen gaze toggle."""
         if not hasattr(self, '_lbl_calib_status'):
             return
         if self._calibrator is not None and self._calibrator.is_fitted:
             self._lbl_calib_status.configure(
                 text="Calibrated \u2713", text_color=GREEN)
+            if hasattr(self, '_sw_screen_gaze'):
+                self._sw_screen_gaze.configure(state="normal")
         else:
             self._lbl_calib_status.configure(
                 text="Not calibrated", text_color=RED)
+            if hasattr(self, '_sw_screen_gaze'):
+                self._sw_screen_gaze.deselect()
+                self._sw_screen_gaze.configure(state="disabled")
+                self._show_screen_gaze = False
+                if self._gaze_overlay:
+                    self._gaze_overlay.hide()
 
     def _load_calibration(self):
         path = fd.askopenfilename(
@@ -986,13 +1095,24 @@ class GazeApp(ctk.CTk):
             except Exception as e:
                 print(f"[calib] Load error: {e}")
 
+    def _toggle_screen_gaze(self):
+        self._show_screen_gaze = bool(self._sw_screen_gaze.get())
+        if not self._show_screen_gaze and self._gaze_overlay:
+            self._gaze_overlay.hide()
+
     def _clear_calibration(self):
         self._calibrator = None
+        self._show_screen_gaze = False
+        if self._gaze_overlay:
+            self._gaze_overlay.hide()
         self._update_calib_status()
 
     # ------------------------------------------------------------------
     def _on_close(self):
         self._running = False
+        if self._gaze_overlay:
+            self._gaze_overlay.destroy()
+            self._gaze_overlay = None
         time.sleep(0.1)
         self.destroy()
 
