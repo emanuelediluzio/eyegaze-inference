@@ -54,7 +54,7 @@ def predict(model, face_bgr: np.ndarray, device: torch.device) -> tuple[float, f
     rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
     inp = _TRANSFORM(rgb).unsqueeze(0).to(device)
 
-    with torch.no_grad():
+    with torch.inference_mode():
         out = model(inp)[0].cpu().numpy()
         yaw, pitch = float(out[0]), float(out[1])
 
@@ -336,10 +336,12 @@ def _draw_eye_arrows(frame, left_eye, right_eye, yaw, pitch, length=120,
     overlay = frame.copy()
     dx = int(math.sin(yaw)    * length)
     dy = int(-math.sin(pitch) * length)
+    thickness = max(2, length // 35)
+    dot_r = max(5, length // 18)
     for (ex, ey) in [p for p in (left_eye, right_eye) if p]:
-        cv2.circle(overlay, (ex, ey), 4, (200, 220, 200), -1)
+        cv2.circle(overlay, (ex, ey), dot_r, (200, 220, 200), -1)
         end = (ex + dx, ey + dy)
-        cv2.arrowedLine(overlay, (ex, ey), end, (180, 220, 180), 2, tipLength=0.25)
+        cv2.arrowedLine(overlay, (ex, ey), end, (180, 220, 180), thickness, tipLength=0.25)
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 
@@ -348,29 +350,33 @@ def _draw_gaze_arrow(frame, cx, cy, yaw, pitch, length=150,
     overlay = frame.copy()
     dx = int(math.sin(yaw)    * length)
     dy = int(-math.sin(pitch) * length)
+    thickness = max(2, length // 35)
     end = (cx + dx, cy + dy)
-    cv2.arrowedLine(overlay, (cx, cy), end, (180, 220, 180), 2, tipLength=0.22)
+    cv2.arrowedLine(overlay, (cx, cy), end, (180, 220, 180), thickness, tipLength=0.22)
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 
-def _draw_face_box(frame, x1, y1, x2, y2, alpha: float = 0.4):
+def _draw_face_box(frame, x1, y1, x2, y2, alpha: float = 0.5):
     overlay = frame.copy()
     bw, bh = x2 - x1, y2 - y1
-    corner_len = min(18, bw // 5, bh // 5)
-    c = (200, 200, 200)
+    side = min(bw, bh)
+    corner_len = max(20, side // 4)
+    thickness = max(2, side // 80)
+    c = (230, 230, 230)
     for (cx, cy, dx, dy) in [
         (x1, y1, 1, 1), (x2, y1, -1, 1),
         (x1, y2, 1, -1), (x2, y2, -1, -1),
     ]:
-        cv2.line(overlay, (cx, cy), (cx + dx * corner_len, cy), c, 1)
-        cv2.line(overlay, (cx, cy), (cx, cy + dy * corner_len), c, 1)
+        cv2.line(overlay, (cx, cy), (cx + dx * corner_len, cy), c, thickness)
+        cv2.line(overlay, (cx, cy), (cx, cy + dy * corner_len), c, thickness)
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 
-def _draw_iris_dots(frame, left_eye, right_eye, alpha: float = 0.5):
+def _draw_iris_dots(frame, left_eye, right_eye, radius: int = 3,
+                    alpha: float = 0.5):
     overlay = frame.copy()
     for pt in [p for p in (left_eye, right_eye) if p]:
-        cv2.circle(overlay, pt, 3, (220, 220, 220), -1)
+        cv2.circle(overlay, pt, radius, (220, 220, 220), -1)
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 

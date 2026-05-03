@@ -104,6 +104,8 @@ class GazeApp(ctk.CTk):
         self._faces_data: list[dict] = []
         self._face_count = 0
         self._fps = 0.0
+        self._selected_face = 0
+        self._prev_centroids: list[tuple[float, float]] = []
 
         # video
         self._video_mode = video_path is not None
@@ -191,6 +193,8 @@ class GazeApp(ctk.CTk):
         self.bind("<C>", lambda e: threading.Thread(
             target=self._run_calibration_thread, daemon=True).start())
         self.bind("<space>", lambda e: self._toggle_pause() if self._video_mode else None)
+        self.bind("<Left>", lambda e: self._prev_face())
+        self.bind("<Right>", lambda e: self._next_face())
 
     def _sep(self, parent, pad_x=16):
         ctk.CTkFrame(parent, height=1, fg_color=BORDER).pack(
@@ -234,6 +238,28 @@ class GazeApp(ctk.CTk):
                      ).pack(anchor="w", padx=px, pady=(0, 8))
 
         self._sep(sb, px)
+
+        # -- face selector
+        self._section_label(sb, "FACE", px)
+
+        sel_frame = ctk.CTkFrame(sb, fg_color="transparent")
+        sel_frame.pack(fill="x", padx=px, pady=(0, 6))
+
+        ctk.CTkButton(sel_frame, text="\u25C0", width=28, height=24,
+                      font=("SF Mono", 12), corner_radius=4,
+                      fg_color=BORDER, hover_color="#333",
+                      text_color=TEXT, command=self._prev_face
+                      ).pack(side="left")
+
+        self._lbl_face_sel = ctk.CTkLabel(sel_frame, text="Face 1/1",
+                                           font=("SF Mono", 12), text_color=TEXT)
+        self._lbl_face_sel.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkButton(sel_frame, text="\u25B6", width=28, height=24,
+                      font=("SF Mono", 12), corner_radius=4,
+                      fg_color=BORDER, hover_color="#333",
+                      text_color=TEXT, command=self._next_face
+                      ).pack(side="left")
 
         # -- gaze
         self._section_label(sb, "GAZE", px)
@@ -348,7 +374,7 @@ class GazeApp(ctk.CTk):
         ctk.CTkFrame(sb, fg_color="transparent").pack(fill="both", expand=True)
 
         # shortcuts hint
-        ctk.CTkLabel(sb, text="C=Calibrate  Q=Quit",
+        ctk.CTkLabel(sb, text="C=Calibrate  Q=Quit  \u2190\u2192=Face",
                      font=("SF Mono", 9), text_color="#333"
                      ).pack(anchor="w", padx=px, pady=(0, 2))
 
@@ -410,6 +436,14 @@ class GazeApp(ctk.CTk):
     # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
+    def _prev_face(self):
+        if self._faces_data:
+            self._selected_face = (self._selected_face - 1) % len(self._faces_data)
+
+    def _next_face(self):
+        if self._faces_data:
+            self._selected_face = (self._selected_face + 1) % len(self._faces_data)
+
     def _toggle_pause(self):
         self._paused = not self._paused
         if hasattr(self, '_btn_playpause'):
@@ -428,6 +462,59 @@ class GazeApp(ctk.CTk):
     # ------------------------------------------------------------------
     # Processing loop (background thread)
     # ------------------------------------------------------------------
+    def _stable_sort_faces(self, faces: list[dict]) -> list[dict]:
+        """Reorder faces to match previous frame's ordering by centroid proximity."""
+        if not faces:
+            self._prev_centroids = []
+            return faces
+
+        # compute centroids for current frame
+        centroids = []
+        for f in faces:
+            x1, y1, x2, y2 = f["bbox"]
+            centroids.append(((x1 + x2) / 2.0, (y1 + y2) / 2.0))
+
+        if not self._prev_centroids:
+            self._prev_centroids = centroids
+            return faces
+
+        # match current faces to previous by nearest centroid
+        n_prev = len(self._prev_centroids)
+        n_curr = len(centroids)
+        used = [False] * n_curr
+        ordered: list[dict | None] = [None] * max(n_prev, n_curr)
+
+        for pi, (px, py) in enumerate(self._prev_centroids):
+            best_j, best_d = -1, float("inf")
+            for ci, (cx, cy) in enumerate(centroids):
+                if used[ci]:
+                    continue
+                d = (px - cx) ** 2 + (py - cy) ** 2
+                if d < best_d:
+                    best_d, best_j = d, ci
+            if best_j >= 0 and best_d < 200_000:  # ~450px max shift
+                ordered[pi] = faces[best_j]
+                used[best_j] = True
+
+        # append unmatched new faces
+        slot = 0
+        for ci in range(n_curr):
+            if not used[ci]:
+                while slot < len(ordered) and ordered[slot] is not None:
+                    slot += 1
+                if slot < len(ordered):
+                    ordered[slot] = faces[ci]
+                else:
+                    ordered.append(faces[ci])
+
+        result = [f for f in ordered if f is not None]
+        self._prev_centroids = [
+            ((f["bbox"][0] + f["bbox"][2]) / 2.0,
+             (f["bbox"][1] + f["bbox"][3]) / 2.0)
+            for f in result
+        ]
+        return result
+
     def _get_ema(self, face_idx: int) -> EMA:
         if face_idx not in self._emas:
             self._emas[face_idx] = EMA(alpha=0.3)
@@ -522,19 +609,25 @@ class GazeApp(ctk.CTk):
 
                 faces_out.append(face_entry)
 
-                # overlays
+                # overlays — scale with face size
+                face_w = x2 - x1
+                arrow_len = max(50, face_w * 2 // 3)
+                iris_r = max(5, face_w // 30)
+
                 if self._show_face_box:
                     _draw_face_box(frame, x1, y1, x2, y2)
                 if self._show_iris:
-                    _draw_iris_dots(frame, left_eye, right_eye)
+                    _draw_iris_dots(frame, left_eye, right_eye, radius=iris_r)
                 if self._show_arrows:
                     if left_eye or right_eye:
                         _draw_eye_arrows(frame, left_eye, right_eye,
-                                         yaw, pitch, 120)
+                                         yaw, pitch, arrow_len)
                     else:
                         cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                        _draw_gaze_arrow(frame, cx, cy, yaw, pitch, 120)
+                        _draw_gaze_arrow(frame, cx, cy, yaw, pitch, arrow_len)
 
+            # stable face ordering via centroid matching
+            faces_out = self._stable_sort_faces(faces_out)
             self._faces_data = faces_out
 
             display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -544,8 +637,16 @@ class GazeApp(ctk.CTk):
             frame_time = 0.9 * frame_time + 0.1 * dt
             self._fps = 1.0 / max(frame_time, 1e-6)
 
-            if self._video_mode and target_dt > dt:
-                time.sleep(target_dt - dt)
+            # video pacing: sleep if ahead, skip frames if behind
+            if self._video_mode and target_dt > 0:
+                if dt < target_dt:
+                    time.sleep(target_dt - dt)
+                else:
+                    frames_behind = int(dt / target_dt) - 1
+                    if frames_behind > 0 and self._cap is not None:
+                        new_pos = self._video_pos + frames_behind
+                        if new_pos < self._video_total:
+                            self._cap.set(cv2.CAP_PROP_POS_FRAMES, new_pos)
 
         if self._cap is not None:
             self._cap.release()
@@ -581,9 +682,19 @@ class GazeApp(ctk.CTk):
 
         self._lbl_fps.configure(text=f"{self._fps:.0f} fps")
 
-        # gaze + metrics (first face)
+        # face selector
+        n_faces = len(self._faces_data)
+        if n_faces > 0:
+            self._selected_face = min(self._selected_face, n_faces - 1)
+        else:
+            self._selected_face = 0
+        if hasattr(self, '_lbl_face_sel'):
+            self._lbl_face_sel.configure(
+                text=f"Face {self._selected_face + 1}/{max(n_faces, 1)}")
+
+        # gaze + metrics (selected face)
         if self._faces_data:
-            f = self._faces_data[0]
+            f = self._faces_data[self._selected_face]
             yd = math.degrees(f["yaw"])
             pd = math.degrees(f["pitch"])
             self._lbl_yaw.configure(text=f"Yaw   {yd:+6.1f}\u00b0")
