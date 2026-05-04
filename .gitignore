@@ -16,3 +16,5 @@ checkpoints/
 *.mp4.ytdl
 *.png
 output_*
+eyegaze_inference.egg-info/
+pip-freeze.txt

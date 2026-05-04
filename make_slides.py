@@ -1,427 +1,584 @@
-"""Generate A4 landscape presentation slides for EyeGaze Inference."""
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-import matplotlib.patches as mpatches
+"""
+Generate professional A4 landscape presentation slides for EyeGaze Inference.
+Uses python-pptx for proper PowerPoint output.
 
-# -- constants
-W, H = 11.69, 8.27  # A4 landscape in inches
-BG = "#0d1117"
-SURFACE = "#161b22"
-TEXT = "#e6edf3"
-DIM = "#8b949e"
-GREEN = "#3fb950"
-BLUE = "#58a6ff"
-PURPLE = "#bc8cff"
-ORANGE = "#f0883e"
-RED = "#f85149"
-BORDER = "#30363d"
+Usage:
+    python make_slides.py
+    open eyegaze_slides.pptx
+"""
+from pptx import Presentation
+from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE
 
+# -- A4 landscape dimensions
+SLIDE_W = Emu(10692000)  # 297mm
+SLIDE_H = Emu(7560000)   # 210mm
 
-def _base_fig(title=None):
-    fig = plt.figure(figsize=(W, H), facecolor=BG)
-    ax = fig.add_axes([0, 0, 1, 1])
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.set_facecolor(BG)
-    ax.axis("off")
-    # top bar
-    ax.axhline(y=0.88, xmin=0.05, xmax=0.95, color=BORDER, linewidth=0.8)
-    if title:
-        ax.text(0.5, 0.93, title, ha="center", va="center",
-                fontsize=26, fontweight="bold", color=TEXT, fontfamily="sans-serif")
-    # footer
-    ax.text(0.05, 0.03, "Emanuele Di Luzio", fontsize=8, color=DIM, fontfamily="sans-serif")
-    ax.text(0.95, 0.03, "EyeGaze Inference", fontsize=8, color=DIM,
-            ha="right", fontfamily="sans-serif")
-    return fig, ax
+# -- Colors
+BG       = RGBColor(0x0d, 0x11, 0x17)
+SURFACE  = RGBColor(0x16, 0x1b, 0x22)
+CARD     = RGBColor(0x1c, 0x22, 0x2b)
+TEXT     = RGBColor(0xe6, 0xed, 0xf3)
+DIM      = RGBColor(0x8b, 0x94, 0x9e)
+GREEN    = RGBColor(0x3f, 0xb9, 0x50)
+BLUE     = RGBColor(0x58, 0xa6, 0xff)
+PURPLE   = RGBColor(0xbc, 0x8c, 0xff)
+ORANGE   = RGBColor(0xf0, 0x88, 0x3e)
+RED      = RGBColor(0xf8, 0x51, 0x49)
+BORDER   = RGBColor(0x30, 0x36, 0x3d)
+WHITE    = RGBColor(0xff, 0xff, 0xff)
+BLACK    = RGBColor(0x00, 0x00, 0x00)
+
+FONT_TITLE = "Helvetica Neue"
+FONT_BODY  = "Helvetica Neue"
+FONT_MONO  = "SF Mono"
 
 
-def _box(ax, x, y, w, h, text, color=BLUE, fontsize=11, text_color=TEXT):
-    rect = mpatches.FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.008",
-                                    facecolor=SURFACE, edgecolor=color, linewidth=1.5)
-    ax.add_patch(rect)
-    ax.text(x + w/2, y + h/2, text, ha="center", va="center",
-            fontsize=fontsize, color=text_color, fontfamily="sans-serif")
+def _set_slide_bg(slide, color=BG):
+    bg = slide.background
+    fill = bg.fill
+    fill.solid()
+    fill.fore_color.rgb = color
 
 
-def _arrow(ax, x1, y1, x2, y2, color=DIM):
-    ax.annotate("", xy=(x2, y2), xytext=(x1, y1),
-                arrowprops=dict(arrowstyle="->", color=color, lw=1.5))
+def _add_text(slide, left, top, width, height, text, font_size=14,
+              color=TEXT, bold=False, font=FONT_BODY, alignment=PP_ALIGN.LEFT):
+    txBox = slide.shapes.add_textbox(left, top, width, height)
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = text
+    p.font.size = Pt(font_size)
+    p.font.color.rgb = color
+    p.font.bold = bold
+    p.font.name = font
+    p.alignment = alignment
+    return txBox
 
 
-def _bullets(ax, x, y, items, fontsize=13, spacing=0.055, color=TEXT):
-    for i, item in enumerate(items):
-        ax.text(x, y - i * spacing, item, fontsize=fontsize, color=color,
-                fontfamily="sans-serif", va="center")
+def _add_para(text_frame, text, font_size=12, color=DIM, bold=False,
+              font=FONT_BODY, space_before=Pt(4), space_after=Pt(2),
+              alignment=PP_ALIGN.LEFT):
+    p = text_frame.add_paragraph()
+    p.text = text
+    p.font.size = Pt(font_size)
+    p.font.color.rgb = color
+    p.font.bold = bold
+    p.font.name = font
+    p.space_before = space_before
+    p.space_after = space_after
+    p.alignment = alignment
+    return p
+
+
+def _add_rect(slide, left, top, width, height, fill_color=SURFACE,
+              border_color=BORDER, border_width=Pt(1), radius=None):
+    shape = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = fill_color
+    shape.line.color.rgb = border_color
+    shape.line.width = border_width
+    if radius is not None:
+        shape.adjustments[0] = radius
+    return shape
+
+
+def _add_card(slide, left, top, width, height, title, items,
+              accent_color=BLUE, title_size=14, item_size=11):
+    """Add a card with title and bullet items."""
+    _add_rect(slide, left, top, width, height,
+              fill_color=CARD, border_color=accent_color, border_width=Pt(1.5))
+
+    txBox = slide.shapes.add_textbox(
+        left + Emu(150000), top + Emu(100000),
+        width - Emu(300000), height - Emu(200000))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+
+    p = tf.paragraphs[0]
+    p.text = title
+    p.font.size = Pt(title_size)
+    p.font.color.rgb = accent_color
+    p.font.bold = True
+    p.font.name = FONT_BODY
+    p.space_after = Pt(8)
+
+    for item in items:
+        _add_para(tf, item, font_size=item_size, color=DIM, space_before=Pt(3))
+
+    return txBox
+
+
+def _footer(slide, page_num, total):
+    _add_text(slide, Emu(400000), SLIDE_H - Emu(400000), Emu(3000000), Emu(250000),
+              "Emanuele Di Luzio", font_size=8, color=BORDER)
+    _add_text(slide, SLIDE_W - Emu(3400000), SLIDE_H - Emu(400000),
+              Emu(3000000), Emu(250000),
+              f"EyeGaze Inference  \u2014  {page_num}/{total}",
+              font_size=8, color=BORDER, alignment=PP_ALIGN.RIGHT)
+
+
+def _title_bar(slide, title):
+    _add_text(slide, Emu(400000), Emu(250000), Emu(9000000), Emu(600000),
+              title, font_size=28, color=WHITE, bold=True, font=FONT_TITLE)
+    # accent line under title
+    line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Emu(400000), Emu(850000), Emu(800000), Emu(35000))
+    line.fill.solid()
+    line.fill.fore_color.rgb = GREEN
+    line.line.fill.background()
+
+
+def mm(val):
+    """Convert mm to Emu."""
+    return Emu(int(val * 36000))
 
 
 # =========================================================================
-# SLIDE 1 — Title
+# SLIDES
 # =========================================================================
-def slide_title():
-    fig, ax = _base_fig()
-    ax.text(0.5, 0.62, "EyeGaze Inference", ha="center", va="center",
-            fontsize=44, fontweight="bold", color=TEXT, fontfamily="sans-serif")
-    ax.text(0.5, 0.52, "Real-Time Gaze Estimation with GazeDINO",
-            ha="center", va="center", fontsize=20, color=DIM, fontfamily="sans-serif")
-    ax.axhline(y=0.46, xmin=0.3, xmax=0.7, color=GREEN, linewidth=2)
-    ax.text(0.5, 0.38, "DINOv2 ViT-B/14  +  MediaPipe FaceMesh  +  Polynomial Calibration",
-            ha="center", va="center", fontsize=14, color=BLUE, fontfamily="sans-serif")
-    ax.text(0.5, 0.28, "Best model: 3.24\u00b0 mean angular error",
-            ha="center", va="center", fontsize=16, color=GREEN, fontfamily="sans-serif")
-    ax.text(0.5, 0.15, "Emanuele Di Luzio", ha="center", va="center",
-            fontsize=16, color=DIM, fontfamily="sans-serif")
-    return fig
+
+def slide_title(prs):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank
+    _set_slide_bg(slide)
+
+    # Main title
+    _add_text(slide, mm(20), mm(50), mm(257), mm(25),
+              "EyeGaze Inference", font_size=48, color=WHITE,
+              bold=True, font=FONT_TITLE, alignment=PP_ALIGN.CENTER)
+
+    # Subtitle
+    _add_text(slide, mm(20), mm(78), mm(257), mm(15),
+              "Real-Time Gaze Estimation with GazeDINO",
+              font_size=22, color=DIM, alignment=PP_ALIGN.CENTER)
+
+    # Green line
+    line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, mm(110), mm(98), mm(77), Emu(30000))
+    line.fill.solid()
+    line.fill.fore_color.rgb = GREEN
+    line.line.fill.background()
+
+    # Tech stack
+    _add_text(slide, mm(20), mm(105), mm(257), mm(12),
+              "DINOv2 ViT-B/14   \u00b7   MediaPipe FaceMesh   \u00b7   Polynomial Calibration",
+              font_size=14, color=BLUE, alignment=PP_ALIGN.CENTER)
+
+    # Key metric
+    _add_rect(slide, mm(105), mm(125), mm(87), mm(22),
+              fill_color=SURFACE, border_color=GREEN, border_width=Pt(2))
+    _add_text(slide, mm(105), mm(127), mm(87), mm(18),
+              "3.24\u00b0 mean angular error",
+              font_size=18, color=GREEN, bold=True, alignment=PP_ALIGN.CENTER)
+
+    # Author
+    _add_text(slide, mm(20), mm(165), mm(257), mm(12),
+              "Emanuele Di Luzio", font_size=16, color=DIM,
+              alignment=PP_ALIGN.CENTER)
 
 
-# =========================================================================
-# SLIDE 2 — Architecture
-# =========================================================================
-def slide_architecture():
-    fig, ax = _base_fig("Model Architecture — GazeDINO")
+def slide_architecture(prs):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_slide_bg(slide)
+    _title_bar(slide, "Model Architecture")
+    _footer(slide, 2, 7)
 
-    # Input
-    _box(ax, 0.08, 0.72, 0.18, 0.08, "Input\n(B, 3, 224, 224)", GREEN)
-    _arrow(ax, 0.17, 0.72, 0.17, 0.66)
+    # Left column — pipeline blocks
+    blocks = [
+        ("Input  (B, 3, 224, 224)", "Face crop, ImageNet-normalised", GREEN),
+        ("DINOv2 ViT-B/14", "86M params, self-supervised on 142M images", BLUE),
+        ("CLS Token  [768 dim]", "Global image representation", PURPLE),
+        ("MLP Head", "LN(768) \u2192 512 (GELU, drop 0.30)\n\u2192 128 (GELU, drop 0.15) \u2192 2", ORANGE),
+        ("Output  (yaw, pitch)", "Gaze direction in radians", GREEN),
+    ]
 
-    # DINOv2
-    _box(ax, 0.05, 0.52, 0.24, 0.12, "DINOv2 ViT-B/14\n86M params\nSelf-supervised on 142M imgs", BLUE)
-    _arrow(ax, 0.17, 0.52, 0.17, 0.46)
+    y = mm(30)
+    for title, desc, color in blocks:
+        _add_rect(slide, mm(10), y, mm(110), mm(24),
+                  fill_color=CARD, border_color=color, border_width=Pt(1.5))
+        _add_text(slide, mm(14), y + Emu(50000), mm(102), mm(10),
+                  title, font_size=12, color=color, bold=True)
+        _add_text(slide, mm(14), y + Emu(400000), mm(102), mm(14),
+                  desc, font_size=9, color=DIM)
+        y += mm(28)
 
-    # CLS token
-    _box(ax, 0.08, 0.36, 0.18, 0.06, "CLS Token [768]", PURPLE)
-    _arrow(ax, 0.17, 0.36, 0.17, 0.30)
+        # arrow between blocks
+        if color != GREEN or title.startswith("Input"):
+            arrow = slide.shapes.add_shape(
+                MSO_SHAPE.DOWN_ARROW, mm(62), y - mm(5), mm(6), mm(5))
+            arrow.fill.solid()
+            arrow.fill.fore_color.rgb = BORDER
+            arrow.line.fill.background()
 
-    # MLP head
-    _box(ax, 0.03, 0.12, 0.28, 0.16, "MLP Head\nLayerNorm(768)\n768 \u2192 512 (GELU, drop 0.30)\n512 \u2192 128 (GELU, drop 0.15)\n128 \u2192 2", ORANGE, fontsize=10)
+    # Right column — training details
+    _add_card(slide, mm(140), mm(30), mm(145), mm(65),
+              "Training", [
+                  "Dataset: GazeGene (56 subjects, 9 cameras, ~90K samples)",
+                  "Loss: Angular error between 3D gaze vectors",
+                  "Best validation error: 3.24\u00b0",
+                  "50 epochs, AdamW optimizer",
+                  "Backbone frozen initially, then fine-tuned",
+              ], accent_color=BLUE)
 
-    # Output
-    _arrow(ax, 0.17, 0.12, 0.17, 0.07)
-    ax.text(0.17, 0.05, "(yaw, pitch) radians", ha="center", fontsize=11,
-            color=GREEN, fontweight="bold", fontfamily="sans-serif")
+    # Backbone options table
+    _add_rect(slide, mm(140), mm(105), mm(145), mm(70),
+              fill_color=CARD, border_color=PURPLE, border_width=Pt(1.5))
+    _add_text(slide, mm(145), mm(108), mm(100), mm(12),
+              "Backbone Options", font_size=14, color=PURPLE, bold=True)
 
-    # Right side — training details
-    rx = 0.55
-    ax.text(rx, 0.82, "Training Details", fontsize=18, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
-    _bullets(ax, rx, 0.73, [
-        "\u2022  Dataset: GazeGene (56 subjects, 9 cameras, ~90K samples)",
-        "\u2022  Loss: Angular error (mean angle between 3D gaze vectors)",
-        "\u2022  Best val error: 3.24\u00b0",
-        "\u2022  Epochs: 50, optimizer: AdamW",
-        "\u2022  Backbone frozen for first epochs, then fine-tuned",
-    ], fontsize=12, spacing=0.06, color=DIM)
+    headers = [("Backbone", mm(145)), ("Params", mm(210)), ("Embed", mm(250))]
+    for h, x in headers:
+        _add_text(slide, x, mm(122), mm(50), mm(10),
+                  h, font_size=10, color=BLUE, bold=True, font=FONT_MONO)
 
-    ax.text(rx, 0.38, "Backbone Options", fontsize=18, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
-
-    # table
-    headers = ["Backbone", "Params", "Embed"]
     rows = [
-        ["dinov2_vits14", "21M", "384"],
-        ["dinov2_vitb14", "86M", "768  \u2190 default"],
-        ["dinov2_vitl14", "307M", "1024"],
-        ["dinov2_vitg14", "1.1B", "1536"],
+        ("dinov2_vits14", "21M", "384", DIM),
+        ("dinov2_vitb14", "86M", "768", GREEN),
+        ("dinov2_vitl14", "307M", "1024", DIM),
+        ("dinov2_vitg14", "1.1B", "1536", DIM),
     ]
-    ty = 0.30
-    for j, h in enumerate(headers):
-        ax.text(rx + j * 0.14, ty, h, fontsize=11, fontweight="bold",
-                color=BLUE, fontfamily="sans-serif")
-    for i, row in enumerate(rows):
-        for j, cell in enumerate(row):
-            c = GREEN if "default" in cell else DIM
-            ax.text(rx + j * 0.14, ty - (i + 1) * 0.045, cell,
-                    fontsize=10, color=c, fontfamily="sans-serif")
-
-    return fig
+    for i, (name, params, embed, c) in enumerate(rows):
+        ry = mm(132 + i * 10)
+        _add_text(slide, mm(145), ry, mm(60), mm(10), name, font_size=9, color=c, font=FONT_MONO)
+        _add_text(slide, mm(210), ry, mm(35), mm(10), params, font_size=9, color=c, font=FONT_MONO)
+        label = embed + "  \u2190 default" if c == GREEN else embed
+        _add_text(slide, mm(250), ry, mm(40), mm(10), label, font_size=9, color=c, font=FONT_MONO)
 
 
-# =========================================================================
-# SLIDE 3 — Inference Pipeline
-# =========================================================================
-def slide_pipeline():
-    fig, ax = _base_fig("Inference Pipeline")
+def slide_pipeline(prs):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_slide_bg(slide)
+    _title_bar(slide, "Inference Pipeline")
+    _footer(slide, 3, 7)
 
-    # Pipeline boxes
+    # Main pipeline flow (left)
     steps = [
-        (0.08, 0.68, 0.16, 0.10, "Frame\n(BGR)", GREEN),
-        (0.08, 0.50, 0.16, 0.10, "MediaPipe\nFaceMesh", BLUE),
-        (0.08, 0.32, 0.16, 0.10, "Face Crop\n224\u00d7224", PURPLE),
-        (0.08, 0.14, 0.16, 0.10, "GazeDINO\n(yaw, pitch)", ORANGE),
+        ("Frame (BGR)", "Webcam or video file", GREEN),
+        ("MediaPipe FaceMesh", "468 landmarks + iris refinement", BLUE),
+        ("Face Crop  224\u00d7224", "Bounding box from landmarks", PURPLE),
+        ("GazeDINO", "(yaw, pitch) in radians", ORANGE),
+        ("EMA Smoothing", "Stable output, \u03b1 = 0.25", GREEN),
     ]
-    for x, y, w, h, text, color in steps:
-        _box(ax, x, y, w, h, text, color, fontsize=10)
-    for i in range(len(steps) - 1):
-        _arrow(ax, 0.16, steps[i][1], 0.16, steps[i+1][1] + steps[i+1][3])
 
-    # Branches from FaceMesh
-    bx = 0.38
+    y = mm(30)
+    for title, desc, color in steps:
+        _add_rect(slide, mm(10), y, mm(80), mm(20),
+                  fill_color=CARD, border_color=color, border_width=Pt(1.5))
+        _add_text(slide, mm(14), y + Emu(50000), mm(72), mm(8),
+                  title, font_size=11, color=color, bold=True)
+        _add_text(slide, mm(14), y + Emu(350000), mm(72), mm(10),
+                  desc, font_size=8, color=DIM)
+        y += mm(24)
+
+        if title != "EMA Smoothing":
+            arrow = slide.shapes.add_shape(
+                MSO_SHAPE.DOWN_ARROW, mm(47), y - mm(5), mm(6), mm(5))
+            arrow.fill.solid()
+            arrow.fill.fore_color.rgb = BORDER
+            arrow.line.fill.background()
+
+    # Parallel branches (right side)
     branches = [
-        (0.70, "468 Landmarks + Iris\n\u2192 Pupillometry (iris/eye ratio)\n\u2192 Blink detection (EAR < 0.21)", BLUE),
-        (0.55, "Cheekbone distance\n\u2192 d = (14cm \u00d7 focal) / face_px\n\u2192 Comfort zone: 40\u201390 cm", PURPLE),
-        (0.40, "6-point solvePnP\n\u2192 Head pose (yaw, pitch, roll)\n\u2192 3D rotation via Rodrigues", ORANGE),
-        (0.25, "EMA Smoothing\n\u2192 Gaze: \u03b1=0.25, Distance: \u03b1=0.1\n\u2192 Iris: \u03b1=0.2", GREEN),
+        ("Iris & Pupillometry", [
+            "Landmarks 468-477 (iris ring)",
+            "iris_ratio = iris_diameter / eye_width",
+            "EMA smoothed (\u03b1 = 0.2)",
+        ], BLUE),
+        ("Distance Estimation", [
+            "Cheekbone landmarks (234, 454)",
+            "d = (14cm \u00d7 focal) / face_px_width",
+            "Comfort zone: 40\u201390 cm",
+        ], PURPLE),
+        ("Head Pose", [
+            "6-point solvePnP + Rodrigues",
+            "Euler angles: yaw, pitch, roll",
+            "3D model: nose, chin, eyes, mouth",
+        ], ORANGE),
+        ("Blink Detection", [
+            "EAR = Eye Aspect Ratio",
+            "Vertical / horizontal landmarks",
+            "Threshold: 0.21",
+        ], RED),
     ]
-    for by, text, color in branches:
-        _box(ax, bx, by, 0.30, 0.10, text, color, fontsize=9)
-        _arrow(ax, 0.24, 0.55, bx, by + 0.05)
 
-    # Output
-    _box(ax, 0.75, 0.12, 0.20, 0.10, "Screen (x, y)\nafter calibration", RED, fontsize=10)
-    _arrow(ax, 0.16, 0.14, 0.16, 0.10)
-    ax.text(0.16, 0.07, "\u2192 Calibration \u2192", ha="center", fontsize=9,
-            color=DIM, fontfamily="sans-serif")
-    _arrow(ax, 0.26, 0.08, 0.75, 0.17)
+    y = mm(30)
+    for title, items, color in branches:
+        _add_card(slide, mm(110), y, mm(80), mm(34),
+                  title, items, accent_color=color, title_size=11, item_size=8)
+        y += mm(37)
 
-    return fig
+    # Output box
+    _add_rect(slide, mm(205), mm(60), mm(80), mm(50),
+              fill_color=CARD, border_color=GREEN, border_width=Pt(2))
+    _add_text(slide, mm(210), mm(63), mm(70), mm(12),
+              "Output", font_size=14, color=GREEN, bold=True)
+
+    outputs = ["Gaze arrows overlay", "Screen (x, y) coords",
+               "Distance + status", "Pupil dilation", "Head orientation"]
+    txBox = slide.shapes.add_textbox(mm(210), mm(75), mm(70), mm(35))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for item in outputs:
+        _add_para(tf, "\u2022  " + item, font_size=9, color=DIM, space_before=Pt(2))
 
 
-# =========================================================================
-# SLIDE 4 — Calibration
-# =========================================================================
-def slide_calibration():
-    fig, ax = _base_fig("16-Point Gaze Calibration")
+def slide_calibration(prs):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_slide_bg(slide)
+    _title_bar(slide, "16-Point Gaze Calibration")
+    _footer(slide, 4, 7)
 
     # Left — grid visualization
-    ax.text(0.15, 0.82, "4\u00d74 Calibration Grid", ha="center", fontsize=14,
-            fontweight="bold", color=TEXT, fontfamily="sans-serif")
+    grid_x, grid_y = mm(15), mm(35)
+    grid_w, grid_h = mm(85), mm(85)
+    _add_rect(slide, grid_x, grid_y, grid_w, grid_h,
+              fill_color=RGBColor(0x0a, 0x0a, 0x0a), border_color=BORDER, border_width=Pt(2))
 
-    grid_pts = [
+    points = [
         (0.08, 0.08), (0.37, 0.08), (0.63, 0.08), (0.92, 0.08),
         (0.08, 0.37), (0.37, 0.37), (0.63, 0.37), (0.92, 0.37),
         (0.08, 0.63), (0.37, 0.63), (0.63, 0.63), (0.92, 0.63),
         (0.08, 0.92), (0.37, 0.92), (0.63, 0.92), (0.92, 0.92),
     ]
-    # draw in a box area
-    gx0, gy0 = 0.04, 0.25
-    gw, gh = 0.22, 0.50
-    rect = mpatches.FancyBboxPatch((gx0, gy0), gw, gh, boxstyle="round,pad=0.005",
-                                    facecolor="#0a0a0a", edgecolor=BORDER, linewidth=1)
-    ax.add_patch(rect)
-    for rx, ry in grid_pts:
-        px = gx0 + rx * gw
-        py = gy0 + (1 - ry) * gh
-        ax.plot(px, py, 'o', color=GREEN, markersize=6)
-        ax.plot(px, py, 'o', color="white", markersize=2)
+    for rx, ry in points:
+        cx = grid_x + int(rx * grid_w)
+        cy = grid_y + int(ry * grid_h)
+        dot = slide.shapes.add_shape(MSO_SHAPE.OVAL, cx - mm(2), cy - mm(2), mm(4), mm(4))
+        dot.fill.solid()
+        dot.fill.fore_color.rgb = GREEN
+        dot.line.color.rgb = WHITE
+        dot.line.width = Pt(1)
 
-    # Right — details
-    rx = 0.38
-    ax.text(rx, 0.82, "How It Works", fontsize=18, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
-    _bullets(ax, rx, 0.73, [
-        "1.  Fullscreen overlay shows 16 dots (4\u00d74 grid)",
-        "2.  Follow each dot with your eyes (2.8s per point)",
-        "3.  Samples collected after 35% of dwell time",
-        "4.  Outlier filtering: remove samples > 1.5\u03c3 from median",
-        "5.  Degree-3 polynomial least-squares fit (10 coeff/axis)",
-        "6.  Min 10 valid points required",
-        "7.  Saved to calibration.pkl for reuse",
-    ], fontsize=11, spacing=0.055, color=DIM)
+    _add_text(slide, mm(15), mm(125), mm(85), mm(12),
+              "4\u00d74 grid  \u2022  16 calibration points",
+              font_size=10, color=DIM, alignment=PP_ALIGN.CENTER)
 
-    ax.text(rx, 0.30, "Polynomial Features (degree 3)", fontsize=14,
-            fontweight="bold", color=TEXT, fontfamily="sans-serif")
-    ax.text(rx, 0.22,
-            "[1,  y,  p,  y\u00b2,  yp,  p\u00b2,  y\u00b3,  y\u00b2p,  yp\u00b2,  p\u00b3]",
-            fontsize=13, color=BLUE, fontfamily="monospace")
-    ax.text(rx, 0.15, "Two separate fits:  features \u2192 screen_x,  features \u2192 screen_y",
-            fontsize=11, color=DIM, fontfamily="sans-serif")
+    # Right — how it works
+    _add_card(slide, mm(115), mm(35), mm(170), mm(55),
+              "How It Works", [
+                  "1.  Fullscreen overlay shows 16 dots in 4\u00d74 grid",
+                  "2.  Follow each dot with your eyes (2.8s per point, ~45s total)",
+                  "3.  Sample collection starts after 35% of dwell time",
+                  "4.  Outlier filtering: discard samples > 1.5\u03c3 from median",
+                  "5.  Degree-3 polynomial least-squares fit",
+                  "6.  Minimum 10 valid points required (out of 16)",
+                  "7.  Saved to calibration.pkl for reuse across sessions",
+              ], accent_color=GREEN, title_size=13, item_size=10)
 
-    return fig
-
-
-# =========================================================================
-# SLIDE 5 — Screen Gaze Overlay
-# =========================================================================
-def slide_screen_gaze():
-    fig, ax = _base_fig("Screen Gaze — Real-Time Overlay")
-
-    # Left — explanation
-    ax.text(0.08, 0.82, "How It Works", fontsize=18, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
-    _bullets(ax, 0.08, 0.73, [
-        "1.  Calibrate (16 points, ~45s total)",
-        "2.  Enable 'Screen gaze' toggle in sidebar",
-        "3.  Translucent green dot appears on screen",
-        "4.  Follows your gaze in real-time",
-        "5.  Position smoothed with EMA (\u03b1=0.5)",
-        "6.  macOS: transparent background (systemTransparent)",
-        "7.  Always-on-top overlay window",
-    ], fontsize=12, spacing=0.055, color=DIM)
-
-    # visual
-    cx, cy = 0.70, 0.55
-    # screen rectangle
-    rect = mpatches.FancyBboxPatch((0.50, 0.25), 0.40, 0.50,
-                                    boxstyle="round,pad=0.01",
-                                    facecolor="#0a0a0a", edgecolor=BORDER, linewidth=2)
-    ax.add_patch(rect)
-    ax.text(0.70, 0.72, "Screen", ha="center", fontsize=10, color=DIM, fontfamily="sans-serif")
-
-    # gaze dot
-    ax.plot(cx, cy, 'o', color=GREEN, markersize=20, alpha=0.7)
-    ax.plot(cx, cy, 'o', color="white", markersize=6)
-
-    # trail (fading dots)
-    trail = [(0.62, 0.48), (0.64, 0.50), (0.66, 0.52), (0.68, 0.54)]
-    for i, (tx, ty) in enumerate(trail):
-        alpha = 0.15 + i * 0.1
-        ax.plot(tx, ty, 'o', color=GREEN, markersize=8, alpha=alpha)
-
-    ax.text(0.70, 0.30, "gaze position", ha="center", fontsize=9,
-            color=GREEN, fontfamily="sans-serif")
-
-    # pipeline
-    ax.text(0.08, 0.25, "Pipeline", fontsize=14, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
-    ax.text(0.08, 0.17,
-            "GazeDINO \u2192 (yaw, pitch) \u2192 EMA \u2192 Poly3 calibrator \u2192 (screen_x, screen_y) \u2192 overlay dot",
-            fontsize=11, color=BLUE, fontfamily="sans-serif")
-
-    return fig
+    # Polynomial features
+    _add_rect(slide, mm(115), mm(100), mm(170), mm(38),
+              fill_color=CARD, border_color=BLUE, border_width=Pt(1.5))
+    _add_text(slide, mm(120), mm(103), mm(160), mm(12),
+              "Polynomial Features (degree 3)", font_size=13, color=BLUE, bold=True)
+    _add_text(slide, mm(120), mm(115), mm(160), mm(10),
+              "[1,  y,  p,  y\u00b2,  yp,  p\u00b2,  y\u00b3,  y\u00b2p,  yp\u00b2,  p\u00b3]",
+              font_size=14, color=WHITE, font=FONT_MONO)
+    _add_text(slide, mm(120), mm(125), mm(160), mm(10),
+              "10 coefficients per axis  \u2022  Two fits: features \u2192 screen_x, features \u2192 screen_y",
+              font_size=9, color=DIM)
 
 
-# =========================================================================
-# SLIDE 6 — GUI & Features
-# =========================================================================
-def slide_gui():
-    fig, ax = _base_fig("GUI & Features")
+def slide_screen_gaze(prs):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_slide_bg(slide)
+    _title_bar(slide, "Screen Gaze \u2014 Real-Time Overlay")
+    _footer(slide, 5, 7)
 
-    col1x = 0.08
-    col2x = 0.52
+    # Left — how it works
+    _add_card(slide, mm(10), mm(32), mm(130), mm(70),
+              "How It Works", [
+                  "1.  Run 16-point calibration (~45 seconds)",
+                  "2.  Enable \u2018Screen gaze\u2019 toggle in sidebar",
+                  "3.  Translucent green dot appears on screen",
+                  "4.  Dot follows your gaze position in real-time",
+                  "5.  Position smoothed with EMA (\u03b1 = 0.5)",
+                  "6.  macOS: truly transparent background (systemTransparent)",
+                  "7.  Always-on-top overlay, toggleable on/off",
+              ], accent_color=GREEN, title_size=14, item_size=11)
 
-    ax.text(col1x, 0.82, "Dark-Mode Interface", fontsize=16, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
-    _bullets(ax, col1x, 0.73, [
-        "\u2022  Built with CustomTkinter",
-        "\u2022  Live camera feed with overlays",
-        "\u2022  Sidebar: gaze, metrics, calibration, toggles",
-        "\u2022  Multi-face support (up to 5 faces)",
-        "\u2022  Stable face ordering via centroid tracking",
-        "\u2022  Video mode: open files, seek, play/pause",
-    ], fontsize=12, spacing=0.055, color=DIM)
+    # Pipeline
+    _add_rect(slide, mm(10), mm(110), mm(275), mm(25),
+              fill_color=CARD, border_color=BLUE, border_width=Pt(1.5))
+    _add_text(slide, mm(15), mm(112), mm(265), mm(10),
+              "End-to-End Pipeline", font_size=12, color=BLUE, bold=True)
+    _add_text(slide, mm(15), mm(122), mm(265), mm(10),
+              "GazeDINO \u2192 (yaw, pitch) \u2192 EMA \u2192 Poly3 Calibrator \u2192 (screen_x, screen_y) \u2192 Position EMA \u2192 Overlay Dot",
+              font_size=11, color=DIM, font=FONT_MONO)
 
-    ax.text(col2x, 0.82, "Live Metrics", fontsize=16, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
+    # Right — visual: screen with gaze dot
+    scr_x, scr_y = mm(160), mm(32)
+    scr_w, scr_h = mm(120), mm(70)
+    _add_rect(slide, scr_x, scr_y, scr_w, scr_h,
+              fill_color=RGBColor(0x0a, 0x0a, 0x0a), border_color=DIM, border_width=Pt(2))
+    _add_text(slide, scr_x, scr_y + Emu(50000), scr_w, mm(8),
+              "Screen", font_size=9, color=BORDER, alignment=PP_ALIGN.CENTER)
+
+    # Gaze dot (large green circle)
+    dot_x = scr_x + mm(55)
+    dot_y = scr_y + mm(35)
+    dot = slide.shapes.add_shape(MSO_SHAPE.OVAL, dot_x, dot_y, mm(12), mm(12))
+    dot.fill.solid()
+    dot.fill.fore_color.rgb = GREEN
+    dot.line.color.rgb = WHITE
+    dot.line.width = Pt(2)
+
+    # Trail dots (smaller, dimmer)
+    trail = [(-20, 12), (-14, 8), (-8, 5)]
+    for dx, dy in trail:
+        td = slide.shapes.add_shape(
+            MSO_SHAPE.OVAL, dot_x + mm(dx), dot_y + mm(dy), mm(5), mm(5))
+        td.fill.solid()
+        td.fill.fore_color.rgb = GREEN
+        td.line.fill.background()
+
+    _add_text(slide, dot_x - mm(5), dot_y + mm(15), mm(25), mm(8),
+              "gaze position", font_size=8, color=GREEN, alignment=PP_ALIGN.CENTER)
+
+
+def slide_gui(prs):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_slide_bg(slide)
+    _title_bar(slide, "GUI & Features")
+    _footer(slide, 6, 7)
+
+    # Left — interface
+    _add_card(slide, mm(10), mm(32), mm(130), mm(55),
+              "Dark-Mode Interface (CustomTkinter)", [
+                  "\u2022  Live camera feed with configurable overlays",
+                  "\u2022  Sidebar: gaze, metrics, calibration, toggles",
+                  "\u2022  Multi-face support (up to 5 simultaneous faces)",
+                  "\u2022  Stable face ordering via centroid tracking",
+                  "\u2022  Video mode: open files, seek bar, play/pause",
+                  "\u2022  1280\u00d7800 default, resizable",
+              ], accent_color=BLUE, title_size=12, item_size=10)
+
+    # Overlays
+    _add_rect(slide, mm(10), mm(92), mm(60), mm(50),
+              fill_color=CARD, border_color=GREEN, border_width=Pt(1.5))
+    _add_text(slide, mm(14), mm(95), mm(52), mm(10),
+              "Overlay Toggles", font_size=12, color=GREEN, bold=True)
+    toggles = ["\u25a0  Face box", "\u25a0  Gaze arrows", "\u25a0  Iris dots",
+               "\u25a0  Screen gaze"]
+    txBox = slide.shapes.add_textbox(mm(14), mm(107), mm(52), mm(30))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for t in toggles:
+        _add_para(tf, t, font_size=10, color=DIM, space_before=Pt(3))
+
+    # Shortcuts
+    _add_rect(slide, mm(80), mm(92), mm(60), mm(50),
+              fill_color=CARD, border_color=ORANGE, border_width=Pt(1.5))
+    _add_text(slide, mm(84), mm(95), mm(52), mm(10),
+              "Keyboard Shortcuts", font_size=12, color=ORANGE, bold=True)
+    shortcuts = ["Q       Quit", "C       Calibrate", "Space   Play/Pause",
+                 "\u2190 \u2192     Switch face"]
+    txBox = slide.shapes.add_textbox(mm(84), mm(107), mm(52), mm(30))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for s in shortcuts:
+        _add_para(tf, s, font_size=9, color=DIM, font=FONT_MONO, space_before=Pt(3))
+
+    # Right — live metrics
+    _add_card(slide, mm(155), mm(32), mm(130), mm(110),
+              "Live Metrics", [], accent_color=PURPLE, title_size=14)
 
     metrics = [
-        ("Yaw / Pitch", "Model output \u2192 degrees", GREEN),
-        ("Distance", "Pinhole model, 40\u201390 cm zone", BLUE),
-        ("Iris ratio", "Pupillometry proxy", PURPLE),
-        ("EAR", "Blink detection (thresh 0.21)", ORANGE),
-        ("Head pose", "solvePnP \u2192 yaw, pitch, roll", RED),
-        ("Screen XY", "After calibration only", GREEN),
+        ("Yaw / Pitch", "Model output converted to degrees", GREEN),
+        ("Screen XY", "After calibration \u2192 pixel coordinates", GREEN),
+        ("Distance", "Pinhole model, color-coded 40\u201390 cm zone", BLUE),
+        ("Iris ratio", "Pupillometry proxy for dilation", PURPLE),
+        ("EAR", "Blink detection, threshold 0.21", ORANGE),
+        ("Head pose", "solvePnP \u2192 yaw, pitch, roll in degrees", RED),
     ]
-    for i, (name, desc, color) in enumerate(metrics):
-        y = 0.71 - i * 0.065
-        ax.text(col2x, y, name, fontsize=12, fontweight="bold",
-                color=color, fontfamily="sans-serif")
-        ax.text(col2x + 0.18, y, desc, fontsize=11, color=DIM, fontfamily="sans-serif")
-
-    # Overlay toggles
-    ax.text(col1x, 0.35, "Overlay Toggles", fontsize=14, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
-    toggles = ["Face box", "Gaze arrows", "Iris dots", "Screen gaze (post-calibration)"]
-    for i, t in enumerate(toggles):
-        y = 0.28 - i * 0.045
-        ax.text(col1x + 0.02, y, "\u25a0", fontsize=10, color=GREEN, fontfamily="sans-serif")
-        ax.text(col1x + 0.05, y, t, fontsize=11, color=DIM, fontfamily="sans-serif")
-
-    # Keyboard shortcuts
-    ax.text(col2x, 0.35, "Keyboard Shortcuts", fontsize=14, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
-    shortcuts = [("Q", "Quit"), ("C", "Calibrate"), ("Space", "Play/Pause"),
-                 ("\u2190 \u2192", "Switch face")]
-    for i, (key, desc) in enumerate(shortcuts):
-        y = 0.28 - i * 0.045
-        ax.text(col2x, y, key, fontsize=11, fontweight="bold",
-                color=BLUE, fontfamily="monospace")
-        ax.text(col2x + 0.08, y, desc, fontsize=11, color=DIM, fontfamily="sans-serif")
-
-    return fig
+    txBox = slide.shapes.add_textbox(mm(160), mm(50), mm(120), mm(90))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for name, desc, color in metrics:
+        p = _add_para(tf, name, font_size=11, color=color, bold=True, space_before=Pt(8))
+        _add_para(tf, desc, font_size=9, color=DIM, space_before=Pt(1))
 
 
-# =========================================================================
-# SLIDE 7 — Technical Stack & Summary
-# =========================================================================
-def slide_summary():
-    fig, ax = _base_fig("Summary & Technical Stack")
+def slide_summary(prs):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _set_slide_bg(slide)
+    _title_bar(slide, "Summary")
+    _footer(slide, 7, 7)
 
-    # Left column — stack
-    ax.text(0.08, 0.82, "Tech Stack", fontsize=18, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
+    # Left — tech stack
+    _add_card(slide, mm(10), mm(32), mm(130), mm(60),
+              "Tech Stack", [
+                  "PyTorch + TorchVision \u2014 DINOv2 backbone, inference",
+                  "MediaPipe \u2014 FaceMesh 468 landmarks + iris",
+                  "OpenCV \u2014 Video capture, drawing, solvePnP",
+                  "CustomTkinter \u2014 Dark-mode GUI",
+                  "NumPy \u2014 Polynomial fit, EMA, linear algebra",
+              ], accent_color=BLUE, title_size=14, item_size=10)
 
-    stack = [
-        ("PyTorch + TorchVision", "DINOv2 backbone, inference", BLUE),
-        ("MediaPipe", "FaceMesh 468 landmarks + iris", GREEN),
-        ("OpenCV", "Video capture, drawing, solvePnP", PURPLE),
-        ("CustomTkinter", "Dark-mode GUI", ORANGE),
-        ("NumPy", "Polynomial fit, EMA, linear algebra", DIM),
-    ]
-    for i, (name, desc, color) in enumerate(stack):
-        y = 0.72 - i * 0.065
-        ax.text(0.08, y, name, fontsize=13, fontweight="bold", color=color, fontfamily="sans-serif")
-        ax.text(0.32, y, desc, fontsize=11, color=DIM, fontfamily="sans-serif")
-
-    # Right column — key numbers
-    ax.text(0.55, 0.82, "Key Numbers", fontsize=18, fontweight="bold",
-            color=TEXT, fontfamily="sans-serif")
+    # Right — key numbers
+    _add_rect(slide, mm(155), mm(32), mm(130), mm(60),
+              fill_color=CARD, border_color=GREEN, border_width=Pt(1.5))
+    _add_text(slide, mm(160), mm(35), mm(120), mm(12),
+              "Key Numbers", font_size=14, color=GREEN, bold=True)
 
     numbers = [
         ("3.24\u00b0", "Mean angular error"),
         ("86M", "DINOv2 ViT-B/14 parameters"),
-        ("16", "Calibration points (4\u00d74)"),
-        ("10", "Polynomial coefficients per axis"),
+        ("16", "Calibration points (4\u00d74 grid)"),
+        ("10", "Poly coefficients per axis"),
         ("5", "Max simultaneous faces"),
-        ("~30 fps", "Real-time on Apple Silicon (MPS)"),
+        ("\u223c30 fps", "Apple Silicon (MPS)"),
     ]
-    for i, (num, desc) in enumerate(numbers):
-        y = 0.72 - i * 0.065
-        ax.text(0.55, y, num, fontsize=14, fontweight="bold", color=GREEN, fontfamily="sans-serif")
-        ax.text(0.70, y, desc, fontsize=11, color=DIM, fontfamily="sans-serif")
+    txBox = slide.shapes.add_textbox(mm(160), mm(50), mm(120), mm(40))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for num, desc in numbers:
+        p = _add_para(tf, f"{num}    {desc}", font_size=10, color=DIM,
+                      space_before=Pt(4))
 
-    # Bottom — full pipeline summary
-    ax.axhline(y=0.30, xmin=0.05, xmax=0.95, color=BORDER, linewidth=0.8)
-    ax.text(0.50, 0.24, "End-to-End Pipeline", ha="center", fontsize=16,
-            fontweight="bold", color=TEXT, fontfamily="sans-serif")
+    # Bottom — full pipeline
+    _add_rect(slide, mm(10), mm(102), mm(275), mm(35),
+              fill_color=CARD, border_color=BLUE, border_width=Pt(2))
+    _add_text(slide, mm(15), mm(105), mm(265), mm(12),
+              "End-to-End Pipeline", font_size=16, color=WHITE, bold=True)
+    _add_text(slide, mm(15), mm(118), mm(265), mm(15),
+              "Webcam  \u2192  MediaPipe FaceMesh  \u2192  Face Crop  \u2192  GazeDINO (yaw, pitch)  \u2192  EMA  \u2192  Poly3 Calibration  \u2192  Screen (x, y)  \u2192  Overlay Dot",
+              font_size=12, color=BLUE, font=FONT_MONO)
 
-    pipeline_text = (
-        "Webcam \u2192 MediaPipe FaceMesh \u2192 Face Crop \u2192 GazeDINO (yaw, pitch) "
-        "\u2192 EMA \u2192 Poly3 Calibration \u2192 Screen (x, y) \u2192 Overlay Dot"
-    )
-    ax.text(0.50, 0.16, pipeline_text, ha="center", fontsize=12,
-            color=BLUE, fontfamily="sans-serif")
-
-    ax.text(0.50, 0.08, "github.com/emanuelediluzio/eyegaze-inference",
-            ha="center", fontsize=11, color=DIM, fontfamily="sans-serif")
-
-    return fig
+    # GitHub link
+    _add_text(slide, mm(10), mm(150), mm(275), mm(12),
+              "github.com/emanuelediluzio/eyegaze-inference",
+              font_size=14, color=DIM, alignment=PP_ALIGN.CENTER)
 
 
 # =========================================================================
-# Generate PDF
+# Generate
 # =========================================================================
+
 def main():
+    prs = Presentation()
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
+
     slides = [
-        slide_title,
-        slide_architecture,
-        slide_pipeline,
-        slide_calibration,
-        slide_screen_gaze,
-        slide_gui,
-        slide_summary,
+        ("Title", slide_title),
+        ("Architecture", slide_architecture),
+        ("Pipeline", slide_pipeline),
+        ("Calibration", slide_calibration),
+        ("Screen Gaze", slide_screen_gaze),
+        ("GUI & Features", slide_gui),
+        ("Summary", slide_summary),
     ]
 
-    out = "eyegaze_slides.pdf"
-    with PdfPages(out) as pdf:
-        for i, fn in enumerate(slides):
-            print(f"  Slide {i+1}/{len(slides)}: {fn.__name__}")
-            fig = fn()
-            pdf.savefig(fig, facecolor=fig.get_facecolor())
-            plt.close(fig)
+    for i, (name, fn) in enumerate(slides):
+        print(f"  Slide {i+1}/{len(slides)}: {name}")
+        fn(prs)
 
-    print(f"\nDone! {len(slides)} slides -> {out}")
+    out = "eyegaze_slides.pptx"
+    prs.save(out)
+    print(f"\nDone! {len(slides)} slides \u2192 {out}")
 
 
 if __name__ == "__main__":
