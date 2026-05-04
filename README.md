@@ -14,7 +14,7 @@ Best model: **3.24° mean angular error**.
 - [Quick Start](#quick-start)
 - [GUI](#gui)
 - [Inference Pipeline](#inference-pipeline)
-- [9-Point Calibration](#9-point-calibration)
+- [16-Point Calibration](#16-point-calibration)
 - [Headless Test Script](#headless-test-script)
 - [CLI Reference](#cli-reference)
 - [Live Metrics](#live-metrics)
@@ -126,7 +126,7 @@ Dark-mode interface built with CustomTkinter.
 | **MODEL** | Validation error of the loaded checkpoint |
 | **GAZE** | Live yaw/pitch in degrees, screen coordinates (if calibrated) |
 | **METRICS** | Distance (cm) with colour-coded status, iris ratio |
-| **CALIBRATION** | Calibrate / Load / Clear buttons, status indicator |
+| **CALIBRATION** | Calibrate / Load / Clear buttons, status indicator, Screen gaze toggle |
 | **OVERLAY** | Toggle switches: face box, gaze arrows, iris dots |
 | **SOURCE** | Open Video / Camera buttons |
 | **VIDEO** | Play/Pause, seek slider, timestamp (video mode only) |
@@ -136,7 +136,7 @@ Dark-mode interface built with CustomTkinter.
 | Key | Action |
 |-----|--------|
 | `Q` / `ESC` | Quit |
-| `C` | Start 9-point calibration |
+| `C` | Start 16-point calibration |
 | `Space` | Play/Pause (video mode) |
 
 ### Multi-face support
@@ -155,7 +155,7 @@ MediaPipe FaceMesh (468 landmarks + iris refinement)
       |
       |-- Face bbox -> crop -> resize 224x224 -> GazeDINO -> (yaw, pitch) raw
       |         |
-      |         +-- EMA smoothing (alpha=0.3) -> stable (yaw, pitch)
+      |         +-- EMA smoothing (alpha=0.25) -> stable (yaw, pitch)
       |
       |-- Iris landmarks (468-477) -> pupillometry
       |         iris_ratio = iris_diameter_px / eye_width_px
@@ -172,6 +172,7 @@ MediaPipe FaceMesh (468 landmarks + iris refinement)
 
 Without calibration: gaze arrow overlay on video
 With calibration:    screen (x, y) pixel coordinates
+Screen gaze mode:    translucent dot overlay follows gaze on screen
 ```
 
 ### EMA Smoothing
@@ -180,31 +181,36 @@ All continuous values (gaze angles, distance, iris ratios) are smoothed with Exp
 
 | Signal | Alpha |
 |--------|-------|
-| Gaze (yaw, pitch) | 0.3 |
+| Gaze (yaw, pitch) | 0.25 |
 | Distance | 0.1 |
 | Iris ratio | 0.2 |
 
 ---
 
-## 9-Point Calibration
+## 16-Point Calibration
 
-Maps raw `(yaw, pitch)` gaze angles to `(screen_x, screen_y)` pixel coordinates using a 2nd-degree polynomial fit.
+Maps raw `(yaw, pitch)` gaze angles to `(screen_x, screen_y)` pixel coordinates using a 3rd-degree polynomial fit.
 
 ### How it works
 
-1. A fullscreen window shows 9 calibration points in a 3x3 grid
-2. Follow each white dot with your eyes (2.5s per point), keep your head still
-3. After the initial 40% of dwell time, the system collects gaze samples
-4. Polynomial fit with `PolynomialFeatures(degree=2)` + least-squares regression
-5. Requires at least 6 valid points (points with no face detection are skipped)
-6. Saved to `calibration.pkl` for reuse across sessions
+1. A fullscreen window shows 16 calibration points in a 4×4 grid
+2. Follow each white dot with your eyes (2.8s per point), keep your head still
+3. After the initial 35% of dwell time, the system collects gaze samples
+4. Outlier filtering: samples >1.5σ from the median are removed per point
+5. Polynomial fit with degree-3 features + least-squares regression (10 coefficients per axis)
+6. Requires at least 10 valid points (points with no face detection are skipped)
+7. Saved to `calibration.pkl` for reuse across sessions
+
+### Screen gaze overlay
+
+After calibration, enable the **Screen gaze** toggle in the sidebar. A translucent green dot appears on screen and follows your gaze in real-time. The dot position is smoothed with an additional EMA (alpha=0.5) for stability.
 
 ### Polynomial features
 
 For each `(yaw, pitch)` pair, the feature vector is:
 
 ```
-[1, yaw, pitch, yaw^2, yaw*pitch, pitch^2]
+[1, yaw, pitch, yaw², yaw·pitch, pitch², yaw³, yaw²·pitch, yaw·pitch², pitch³]
 ```
 
 Two separate fits: one for screen X, one for screen Y.
@@ -308,7 +314,7 @@ eyegaze-inference/
   infer_gaze.py           # Core: load_model, predict, FaceMeshAnalyzer, EMA,
                           #   BlinkTracker, drawing helpers, head pose
   gui.py                  # Entry point: CustomTkinter GUI with sidebar controls
-  calibration.py          # 9-point calibration: GazeCalibrator, polynomial fit
+  calibration.py          # 16-point calibration: GazeCalibrator, degree-3 polynomial fit
   test_inference.py       # Headless video inference test script
   checkpoints/
     best.pt               # Checkpoint (download manually from Releases)
