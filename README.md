@@ -237,30 +237,6 @@ python calibration.py --model checkpoints/best.pt [--camera 0] [--dwell 2.5] [--
 
 ---
 
-## Headless Test Script
-
-Run inference on a video file without the GUI, producing an annotated output video:
-
-```bash
-python test_inference.py [model_path] [video_path] [output_path] [max_frames]
-```
-
-**Defaults:**
-- `model_path`: `checkpoints/best.pt`
-- `video_path`: `test_muschio.mp4`
-- `output_path`: `output_test.mp4`
-- `max_frames`: `150` (~5 seconds)
-
-**Example:**
-
-```bash
-python test_inference.py checkpoints/best.pt my_video.mp4 result.mp4 300
-```
-
-The script prints progress every 30 frames with face detection rate and processing speed.
-
----
-
 ## CLI Reference
 
 ### gui.py
@@ -315,7 +291,6 @@ eyegaze-inference/
                           #   BlinkTracker, drawing helpers, head pose
   gui.py                  # Entry point: CustomTkinter GUI with sidebar controls
   calibration.py          # 16-point calibration: GazeCalibrator, degree-3 polynomial fit
-  test_inference.py       # Headless video inference test script
   checkpoints/
     best.pt               # Checkpoint (download manually from Releases)
   pyproject.toml          # Project metadata and dependencies (uv/pip)
