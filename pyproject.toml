@@ -2,7 +2,7 @@
 name = "eyegaze-inference"
 version = "0.1.0"
 description = "Eye gaze inference with GUI and custom weights"
-authors = [{name = "Emanuele Di Luzio", email = "your@email.com"}]
+authors = [{name = "Emanuele Di Luzio", email = "emanuelediluzio0@gmail.com"}]
 requires-python = ">=3.10"
 
 dependencies = [
