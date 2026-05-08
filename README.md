@@ -14,8 +14,7 @@ Best model: **3.24° mean angular error**.
 - [Quick Start](#quick-start)
 - [GUI](#gui)
 - [Inference Pipeline](#inference-pipeline)
-- [16-Point Calibration](#16-point-calibration)
-- [Headless Test Script](#headless-test-script)
+- [9-Point Calibration](#9-point-calibration)
 - [CLI Reference](#cli-reference)
 - [Live Metrics](#live-metrics)
 - [Project Structure](#project-structure)
@@ -136,8 +135,9 @@ Dark-mode interface built with CustomTkinter.
 | Key | Action |
 |-----|--------|
 | `Q` / `ESC` | Quit |
-| `C` | Start 16-point calibration |
+| `C` | Start 9-point calibration |
 | `Space` | Play/Pause (video mode) |
+| `Left` / `Right` | Switch primary face (multi-face mode) |
 
 ### Multi-face support
 
@@ -187,19 +187,18 @@ All continuous values (gaze angles, distance, iris ratios) are smoothed with Exp
 
 ---
 
-## 16-Point Calibration
+## 9-Point Calibration
 
 Maps raw `(yaw, pitch)` gaze angles to `(screen_x, screen_y)` pixel coordinates using a 3rd-degree polynomial fit.
 
 ### How it works
 
-1. A fullscreen window shows 16 calibration points in a 4×4 grid
-2. Follow each white dot with your eyes (2.8s per point), keep your head still
-3. After the initial 35% of dwell time, the system collects gaze samples
-4. Outlier filtering: samples >1.5σ from the median are removed per point
-5. Polynomial fit with degree-3 features + least-squares regression (10 coefficients per axis)
-6. Requires at least 10 valid points (points with no face detection are skipped)
-7. Saved to `calibration.pkl` for reuse across sessions
+1. A fullscreen window shows 9 calibration points in a 3×3 grid
+2. Follow each white dot with your eyes (2.5s per point), keep your head still
+3. After the initial 40% of dwell time, the system collects gaze samples
+4. Polynomial fit with degree-3 features + least-squares regression (10 coefficients per axis)
+5. Requires at least 10 valid samples (points with no face detection are skipped)
+6. Saved to `calibration.pkl` for reuse across sessions
 
 ### Screen gaze overlay
 
