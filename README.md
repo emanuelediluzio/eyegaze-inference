@@ -14,7 +14,7 @@ Best model: **3.24° mean angular error**.
 - [Quick Start](#quick-start)
 - [GUI](#gui)
 - [Inference Pipeline](#inference-pipeline)
-- [9-Point Calibration](#9-point-calibration)
+- [Calibration](#calibration)
 - [CLI Reference](#cli-reference)
 - [Live Metrics](#live-metrics)
 - [Project Structure](#project-structure)
@@ -135,7 +135,7 @@ Dark-mode interface built with CustomTkinter.
 | Key | Action |
 |-----|--------|
 | `Q` / `ESC` | Quit |
-| `C` | Start 9-point calibration |
+| `C` | Start calibration |
 | `Space` | Play/Pause (video mode) |
 | `Left` / `Right` | Switch primary face (multi-face mode) |
 
@@ -187,22 +187,35 @@ All continuous values (gaze angles, distance, iris ratios) are smoothed with Exp
 
 ---
 
-## 9-Point Calibration
+## Calibration
 
-Maps raw `(yaw, pitch)` gaze angles to `(screen_x, screen_y)` pixel coordinates using a 3rd-degree polynomial fit.
+Maps raw `(yaw, pitch)` gaze angles to `(screen_x, screen_y)` pixel coordinates using a 3rd-degree polynomial fit. The polynomial coefficients are learned from samples collected during a guided procedure.
 
-### How it works
+There are two paths to calibrate, with **slightly different defaults**.
 
-1. A fullscreen window shows 9 calibration points in a 3×3 grid
-2. Follow each white dot with your eyes (2.5s per point), keep your head still
-3. After the initial 40% of dwell time, the system collects gaze samples
-4. Polynomial fit with degree-3 features + least-squares regression (10 coefficients per axis)
-5. Requires at least 10 valid samples (points with no face detection are skipped)
-6. Saved to `calibration.pkl` for reuse across sessions
+### From the GUI (recommended)
 
-### Screen gaze overlay
+Click **Calibrate** in the sidebar or press `C`.
 
-After calibration, enable the **Screen gaze** toggle in the sidebar. A translucent green dot appears on screen and follows your gaze in real-time. The dot position is smoothed with an additional EMA (alpha=0.5) for stability.
+1. A fullscreen window shows **16 calibration points** in a 4×4 grid
+2. Follow each white dot with your eyes (**2.8 s per point**), keep your head still
+3. After the initial **35 %** of dwell time, the system starts collecting gaze samples
+4. **Outlier filtering** per point: samples whose distance from the median exceeds 1.5σ are discarded (only when ≥ 4 samples are available)
+5. Polynomial fit with degree-3 features + least-squares regression (10 coefficients per axis)
+6. Requires at least 10 valid points (points with no face detection are skipped)
+7. Saved to `calibration.pkl` for reuse across sessions
+
+Other GUI controls:
+- **Load** — load a previously saved `calibration.pkl`
+- **Clear** — drop the current calibration
+
+### Standalone CLI
+
+```bash
+python calibration.py --model checkpoints/best.pt [--camera 0] [--dwell 2.5] [--out calibration.pkl]
+```
+
+The standalone version uses a slightly different procedure: **9 points** in a 3×3 grid, **2.5 s** dwell, sample collection starts after **40 %** of dwell, no outlier filtering. Both paths share the same `GazeCalibrator` and produce a compatible `calibration.pkl`.
 
 ### Polynomial features
 
@@ -212,19 +225,11 @@ For each `(yaw, pitch)` pair, the feature vector is:
 [1, yaw, pitch, yaw², yaw·pitch, pitch², yaw³, yaw²·pitch, yaw·pitch², pitch³]
 ```
 
-Two separate fits: one for screen X, one for screen Y.
+Two separate least-squares fits: one for screen X, one for screen Y.
 
-### From the GUI
+### Screen gaze overlay
 
-- Click **Calibrate** in the sidebar (or press `C`)
-- Click **Load** to load a previously saved `calibration.pkl`
-- Click **Clear** to remove the current calibration
-
-### Standalone calibration
-
-```bash
-python calibration.py --model checkpoints/best.pt [--camera 0] [--dwell 2.5] [--out calibration.pkl]
-```
+After a successful calibration, enable the **Screen gaze** toggle in the sidebar. A translucent green dot appears on the screen and follows your gaze in real time. The dot position is smoothed with an additional EMA (`alpha=0.5`) for stability.
 
 ### Tips for accurate calibration
 
