@@ -56,7 +56,29 @@ Backbone options (via `torch.hub`, `facebookresearch/dinov2`):
 
 ## Installation
 
-### With uv (recommended)
+> **Note:** MediaPipe currently supports Python 3.10-3.11. Make sure you have a compatible version installed.
+
+### macOS / Linux
+
+```bash
+git clone https://github.com/emanuelediluzio/eyegaze-inference.git
+cd eyegaze-inference
+python3.10 -m venv .venv
+source .venv/bin/activate
+python3.10 -m pip install -e .
+```
+
+### Windows
+
+```bash
+git clone https://github.com/emanuelediluzio/eyegaze-inference.git
+cd eyegaze-inference
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -e .
+```
+
+### With uv (alternative)
 
 ```bash
 git clone https://github.com/emanuelediluzio/eyegaze-inference.git
@@ -64,24 +86,10 @@ cd eyegaze-inference
 uv sync --python python3.10
 ```
 
-> **Note:** MediaPipe currently supports Python 3.10-3.11. Make sure you have a compatible version installed.
-
-### With pip
-
-```bash
-git clone https://github.com/emanuelediluzio/eyegaze-inference.git
-cd eyegaze-inference
-pip install -r requirements.txt
-```
-
 ### Dev dependencies (optional)
 
 ```bash
-# with uv
-uv sync --extra dev
-
-# with pip
-pip install pytest black flake8
+python -m pip install -e ".[dev]"
 ```
 
 ---
@@ -101,6 +109,10 @@ mv best_run3_3.24deg.pt checkpoints/best.pt
 ### 2. Run the GUI (webcam)
 
 ```bash
+# macOS / Linux (with venv activated)
+python3.10 gui.py
+
+# Windows (with venv activated)
 python gui.py
 ```
 
@@ -111,6 +123,8 @@ python gui.py --video path/to/video.mp4
 ```
 
 > **macOS:** If the camera doesn't open, go to System Settings -> Privacy & Security -> Camera and authorise your Terminal app.
+>
+> **Windows:** The application uses CUDA automatically if an NVIDIA GPU is available, otherwise it falls back to CPU.
 
 ---
 
