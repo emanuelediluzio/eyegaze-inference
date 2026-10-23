@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "name": "Gaze Direction -> Screen Point of Gaze",
+  "appKey": "8a320228933a1d960656d64e56c7596c527a560f4c6b3b2cb07ec49839453e75e0b3b48cc6d22a99f6c77d322b84fb10dd04d1329f8b3cf2fcf0c0fa2efbd2c0",
+  "nodes": [
+    {
+      "id": "camera",
+      "nodeNumber": 1,
+      "type": "N2uCore.dyn.cvcamera.CvCamera",
+      "sysinit": "SysInit",
+      "settings": {
+        "name": "GazeCamera",
+        "id": 0,
+        "w": 640,
+        "h": 480,
+        "rate": {
+          "fps": 15,
+          "downsampling": 1
+        },
+        "fourCC": "MJPG",
+        "encoding": {
+          "codec": "JPG",
+          "compression": 80
+        },
+        "rotationAngle": 0,
+        "flip": {
+          "horizontal": false,
+          "vertical": false
+        },
+        "crop": {
+          "enabled": false,
+          "x": 0,
+          "y": 0,
+          "w": 200,
+          "h": 200
+        },
+        "scale": 1.0
+      },
+      "x": 80,
+      "y": 120
+    },
+    {
+      "id": "gaze",
+      "nodeNumber": 2,
+      "type": "N2uCore.dyn.eyegaze.GazeDirection",
+      "sysinit": "SysInit",
+      "settings": {
+        "name": "GazeDino",
+        "checkpoint": "models/gazedino/best_run3_3.24deg.pt",
+        "device": "auto",
+        "hubDir": "",
+        "maxFps": 4.0,
+        "emaAlpha": 0.25,
+        "idleTimeout": 600
+      },
+      "x": 440,
+      "y": 120
+    },
+    {
+      "id": "screen",
+      "nodeNumber": 3,
+      "type": "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze",
+      "sysinit": "SysInit",
+      "settings": {
+        "name": "ScreenGaze",
+        "calibrationPath": "",
+        "maxSampleAgeSecs": 2.0
+      },
+      "x": 800,
+      "y": 120
+    }
+  ],
+  "edges": [
+    {
+      "id": "rgb",
+      "from": "camera",
+      "to": "gaze",
+      "outputName": "VideoStream",
+      "inputName": "VideoStream"
+    },
+    {
+      "id": "direction-to-screen",
+      "from": "gaze",
+      "to": "screen",
+      "outputName": "GazeDirection",
+      "inputName": "GazeDirection"
+    }
+  ]
+}

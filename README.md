@@ -25,6 +25,14 @@ Best model: **3.24° mean angular error**.
 
 ---
 
+## N2uCore / Iride nodes
+
+The [N2uCore integration](integrations/n2ucore/README.md) includes two sequential
+nodes: **Gaze Direction** (`MlDevice` / `MlTicker`) and **Screen Point of Gaze**
+(`SwDevice`), plus guided calibration in Iride. Sources preserve the framework's
+folder hierarchy. Its installer merges the two catalogue entries and UI changes
+into an existing N2uCore checkout without replacing unrelated nodes.
+
 ## Architecture
 
 ```

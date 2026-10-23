@@ -1,0 +1,9 @@
+# Install into the Python environment used by the target SysInit.
+# Select matching torch/torchvision builds for your CPU, CUDA or MPS hardware.
+torch>=2.1.0
+torchvision>=0.16.0
+opencv-python>=4.8.0
+mediapipe==0.10.21
+numpy>=1.24,<2
+Pillow>=10.0.0
+psutil

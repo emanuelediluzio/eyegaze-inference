@@ -1,0 +1,160 @@
+{
+  "N2uCore.dyn.eyegaze.GazeDirection": {
+    "group": "/Inference Models/Eye Gaze",
+    "module": "N2uCore.dyn.eyegaze",
+    "class": "GazeDirection",
+    "label": "Gaze Direction",
+    "description": "RGB face to camera-space gaze angles and unit 3D vector. No screen calibration.",
+    "PROPS_SCHEMA": {
+      "checkpoint": {
+        "type": "STR",
+        "default": "models/gazedino/best_run3_3.24deg.pt"
+      },
+      "device": {
+        "type": "ENUM",
+        "itemType": "STR",
+        "values": [
+          "auto",
+          "cpu",
+          "mps",
+          "cuda"
+        ],
+        "default": "auto"
+      },
+      "hubDir": {
+        "type": "STR",
+        "default": ""
+      },
+      "maxFps": {
+        "type": "FLOAT",
+        "min": 0.1,
+        "max": 30,
+        "default": 4.0
+      },
+      "emaAlpha": {
+        "type": "FLOAT",
+        "min": 0.01,
+        "max": 1,
+        "default": 0.25
+      },
+      "idleTimeout": {
+        "type": "INT",
+        "min": 0,
+        "default": 600
+      }
+    },
+    "inputs": [
+      {
+        "name": "VideoStream",
+        "type": "VIDEO_VISIBLE"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "GazeDirection",
+        "type": "TEXT"
+      }
+    ],
+    "commands": {}
+  },
+  "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze": {
+    "group": "/Inference Models/Eye Gaze",
+    "module": "N2uCore.dyn.screenpointofgaze",
+    "class": "ScreenPointOfGaze",
+    "label": "Screen Point of Gaze",
+    "description": "Maps upstream gaze direction to calibrated screen pixels; no neural model. Includes guided 16-point calibration.",
+    "PROPS_SCHEMA": {
+      "calibrationPath": {
+        "type": "STR",
+        "default": ""
+      },
+      "maxSampleAgeSecs": {
+        "type": "FLOAT",
+        "min": 0.1,
+        "max": 30,
+        "default": 2.0
+      }
+    },
+    "inputs": [
+      {
+        "name": "GazeDirection",
+        "type": "TEXT"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "ScreenPoint",
+        "type": "TEXT"
+      }
+    ],
+    "commands": {
+      "calibrationStatus": {
+        "name": "calibrationStatus",
+        "label": "calibrationStatus",
+        "args": {}
+      },
+      "setCalibration": {
+        "name": "setCalibration",
+        "label": "setCalibration",
+        "args": {
+          "calibration": {
+            "type": "ANY"
+          }
+        }
+      },
+      "getCalibration": {
+        "name": "getCalibration",
+        "label": "getCalibration",
+        "args": {}
+      },
+      "clearCalibration": {
+        "name": "clearCalibration",
+        "label": "clearCalibration",
+        "args": {}
+      },
+      "beginCalibration": {
+        "name": "beginCalibration",
+        "label": "beginCalibration",
+        "args": {
+          "screen_w": {
+            "type": "INT",
+            "min": 2
+          },
+          "screen_h": {
+            "type": "INT",
+            "min": 2
+          }
+        }
+      },
+      "calibrationTarget": {
+        "name": "calibrationTarget",
+        "label": "calibrationTarget",
+        "args": {
+          "x": {
+            "type": "FLOAT",
+            "min": 0
+          },
+          "y": {
+            "type": "FLOAT",
+            "min": 0
+          }
+        }
+      },
+      "finishTarget": {
+        "name": "finishTarget",
+        "label": "finishTarget",
+        "args": {}
+      },
+      "fitCalibration": {
+        "name": "fitCalibration",
+        "label": "fitCalibration",
+        "args": {}
+      },
+      "cancelCalibration": {
+        "name": "cancelCalibration",
+        "label": "cancelCalibration",
+        "args": {}
+      }
+    }
+  }
+}

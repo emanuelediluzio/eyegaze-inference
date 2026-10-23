@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "nodes": {
+    "N2uCore.dyn.eyegaze.GazeDirection": {
+      "group": "/Inference Models/Eye Gaze",
+      "label": "Gaze Direction",
+      "paletteLabel": "Gaze Direction",
+      "visibility": "beginner",
+      "PROPS_SCHEMA": {
+        "checkpoint": {
+          "label": "Checkpoint path",
+          "visibility": "beginner"
+        },
+        "device": {
+          "label": "Compute device",
+          "visibility": "beginner"
+        },
+        "hubDir": {
+          "label": "Local DINOv2 source directory (offline)",
+          "optional": true,
+          "visibility": "expert"
+        },
+        "maxFps": {
+          "label": "Maximum inference FPS",
+          "visibility": "beginner"
+        },
+        "emaAlpha": {
+          "label": "Angle EMA alpha",
+          "visibility": "expert"
+        },
+        "idleTimeout": {
+          "label": "Unload after idle seconds (0 = never)",
+          "visibility": "expert"
+        }
+      }
+    },
+    "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze": {
+      "group": "/Inference Models/Eye Gaze",
+      "label": "Screen Point of Gaze",
+      "paletteLabel": "Screen Point of Gaze",
+      "visibility": "beginner",
+      "PROPS_SCHEMA": {
+        "calibrationPath": {
+          "label": "Screen calibration JSON (optional)",
+          "optional": true,
+          "visibility": "intermediate"
+        },
+        "maxSampleAgeSecs": {
+          "label": "Maximum input age (seconds)",
+          "visibility": "expert"
+        }
+      }
+    }
+  }
+}

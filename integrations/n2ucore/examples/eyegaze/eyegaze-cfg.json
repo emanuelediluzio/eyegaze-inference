@@ -1,0 +1,35 @@
+{
+  "module": "N2uCore.dyn.eyegaze",
+  "class": "GazeDirection",
+  "name": "GazeDino",
+  "props": {
+    "checkpoint": "models/gazedino/best_run3_3.24deg.pt",
+    "device": "auto",
+    "hubDir": "",
+    "maxFps": 4.0,
+    "emaAlpha": 0.25,
+    "idleTimeout": 600
+  },
+  "network": {
+    "ssl": {
+      "enabled": false,
+      "certificate": null,
+      "key": null
+    },
+    "isMaster": false,
+    "slaveOf": "",
+    "userland": [
+      {
+        "name": "guest",
+        "token": "b109f3bbbc244eb82441917ed06d618b9008dd09b3befd1b5e07394c706a8bb980b1d7785e5976ec049b46df5f1326af5a2ea6d103fd07c95385ffab0cacbc86"
+      }
+    ],
+    "flow": {
+      "VideoStream": {
+        "node": "GazeCamera",
+        "channel": "VideoStream"
+      }
+    },
+    "address": "127.0.0.1"
+  }
+}
