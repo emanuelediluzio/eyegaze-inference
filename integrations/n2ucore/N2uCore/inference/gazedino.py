@@ -63,7 +63,7 @@ class GazeDinoEngine:
             T.ToPILImage(), T.Resize((224, 224)), T.ToTensor(),
             T.Normalize([.485, .456, .406], [.229, .224, .225])])
         self.mesh = mp.solutions.face_mesh.FaceMesh(
-            max_num_faces=1, refine_landmarks=False,
+            max_num_faces=1, refine_landmarks=True,
             min_detection_confidence=.5, min_tracking_confidence=.5)
 
     def reset(self):
@@ -85,12 +85,16 @@ class GazeDinoEngine:
         sample = {"schema": "gaze-direction.v1", "status": "no_face", "yaw_rad": None,
                   "pitch_rad": None, "yaw_deg": None, "pitch_deg": None,
                   "direction_xyz": None, "coordinate_space": "camera",
-                  "bbox_xyxy_px": None, "confidence": None}
+                  "bbox_xyxy_px": None, "confidence": None,
+                  "image_size_px": [rgb.shape[1], rgb.shape[0]], "eyes_px": []}
         if not detected.multi_face_landmarks:
             self.reset()
             return sample
         h, w = rgb.shape[:2]
         points = detected.multi_face_landmarks[0].landmark
+        # Small, bounded display payload; inference stays on the ML thread.
+        if len(points) >= 478:
+            sample["eyes_px"] = [[points[i].x*w, points[i].y*h] for i in (468, 473)]
         x1 = max(0, int(min(p.x for p in points)*w))
         y1 = max(0, int(min(p.y for p in points)*h))
         x2 = min(w, int(max(p.x for p in points)*w))

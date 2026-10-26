@@ -86,3 +86,24 @@ I test Python richiedono pytest e quelli di trasporto websocket-client; sono
 elencati in `requirements-dev.txt`. Il test di trasporto avvia servizi isolati e
 un video di prova; non misura l'accuratezza su soggetti reali. La precisione del
 puntamento va validata su target nuovi dopo la calibrazione sull'apparato finale.
+
+## Schede video e punto nella pagina
+
+Gaze Direction usa una vista video del Worker dati Iride e una vista TEXT della
+stessa DataSocket: la webcam non viene riaperta dal browser. Il motore ML emette
+anche `image_size_px` e due centri iride (`eyes_px`) per allineare riquadro e
+frecce. I dettagli JSON restano chiusi nella scheda.
+
+Screen Point of Gaze mostra un’anteprima e il punto sopra la pagina Iride,
+con `pointer-events: none`. Il punto sparisce su perdita del volto, campioni
+fermi, disconnessione, pagina nascosta o riduzione/chiusura della scheda. Cambi
+di dimensioni, posizione della finestra o densità del display richiedono una
+nuova calibrazione; non vengono riscalate silenziosamente coordinate vecchie.
+La modalità schermo intero va calibrata dopo l’ingresso nel nuovo viewport.
+
+Carica/Salva calibrazione sono nelle Opzioni avanzate; il pulsante di cancellazione
+non compare. Annullare una nuova raccolta conserva il fit precedente. Una nuova
+calibrazione viene applicata soltanto dopo un fit riuscito.
+
+I punti sono limitati alla pagina Iride, non al desktop o ad altre schede.
+La precisione va verificata con la persona e il monitor reali.

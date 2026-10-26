@@ -53,6 +53,10 @@ def plan(target):
             ('static PANELS = [',
              'static PANELS = [\n    ["screenpointofgaze.screenpointofgaze", ScreenGazePanel],')],
     }
+    hook_path = ROOT / 'framework-hooks.json'
+    if hook_path.is_file():
+        for rel, replacements in json.loads(hook_path.read_text(encoding='utf-8')).items():
+            edits.setdefault(rel, []).extend(replacements)
     for rel, replacements in edits.items():
         text = (target / rel).read_text(encoding='utf-8')
         for before, after in replacements:

@@ -118,3 +118,12 @@ def test_schema_and_pipeline_contract():
     doc=json.loads((ROOT/'examples/eyegaze/gazedino.iride.json').read_text())
     plan=PipelinePlan(definitions,['SysInit'])
     assert plan.build(doc),plan.error()
+
+def test_display_metadata_contains_only_frame_size_and_two_iris_centers():
+    e = engine()
+    landmarks = [NS(x=.1, y=.2), NS(x=.9, y=.8)] + [NS(x=.5, y=.5) for _ in range(476)]
+    e.mesh.process.return_value = NS(multi_face_landmarks=[NS(landmark=landmarks)])
+    sample = e.analyze(np.zeros((100, 200, 3), np.uint8))
+    assert sample['image_size_px'] == [200, 100]
+    assert sample['eyes_px'] == [[100, 50], [100, 50]]
+    assert len(sample['eyes_px']) == 2

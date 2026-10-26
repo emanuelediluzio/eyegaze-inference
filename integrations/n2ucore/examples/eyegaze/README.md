@@ -41,13 +41,14 @@ Aprire la card del nodo **Screen Point of Gaze** a pipeline avviata:
 
 - **Calibra 16 punti**: mostra una griglia 4×4 sull'area del browser Iride; seguire i punti tenendo ferma la testa. La raccolta dura 2,8 s per punto e scarta i primi 0,98 s. Il pannello avanza ogni 3 s.
 - Il backend richiede almeno 3 predizioni fresche per punto, filtra gli outlier e calcola un fit cubico con almeno 10 punti e matrice di rango pieno. Il percorso guidato raccoglie tutti i 16 punti. Se il volto manca o il fit è degenere, il comando fallisce senza sostituire la calibrazione precedente.
-- **Carica JSON / Salva JSON**: trasferiscono i coefficienti tramite `nodeCommand → uinode → Flow`, senza accedere direttamente al nodo o al filesystem della BlackBox.
-- **Cancella calibrazione**: torna allo stato `uncalibrated`.
+- **Carica calibrazione / Salva calibrazione**: trasferiscono i coefficienti tramite `nodeCommand → uinode → Flow`, senza accedere direttamente al nodo o al filesystem della BlackBox.
+- **Mostra punto nella pagina**: abilita il pallino nella pagina Iride dopo la calibrazione.
+- **Prova a schermo intero**: estende Iride al monitor; calibrare dopo il cambio di viewport.
 - **Esc / Annulla**, cambio di dimensioni della finestra, pagina nascosta o perdita del nodo annullano la procedura. La perdita del flusso direzionale annulla anche la raccolta sul backend.
 
 I punti guidati sono espressi in **pixel CSS dell'area di Iride**. Le coordinate risultanti hanno lo stesso riferimento; non sono coordinate globali del desktop. Per applicare il risultato a un intero monitor occorre un viewport a schermo intero, stabile durante calibrazione e utilizzo, o una trasformazione esplicita di origine/scala. Non spostare la telecamera o cambiare seduta dopo aver calibrato.
 
-La card gestisce raccolta, caricamento e salvataggio. Il risultato `ScreenPoint` è disponibile come stream JSON; questa integrazione non aggiunge un puntatore globale al desktop né una visualizzazione a frecce sul video. L'app desktop originale mantiene quelle visualizzazioni.
+La card Gaze Direction mostra video, riquadro del volto, centri degli occhi e frecce dello sguardo. La card Screen Point of Gaze gestisce calibrazione e pallino nell’area di Iride, anche a schermo intero. I dati tecnici restano disponibili in una sezione richiudibile e come stream JSON. Il pallino non può sovrapporsi alle altre applicazioni del desktop.
 
 ### Compatibilità con le calibrazioni esistenti
 

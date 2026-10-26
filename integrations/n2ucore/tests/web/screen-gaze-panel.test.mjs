@@ -1,67 +1,48 @@
-// Minimal DOM harness: tests command routing and cancellation without a browser/camera.
-import { test } from 'node:test';
+import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-const source = await readFile(new URL('../../N2uCore/res/web/iride/lib/ui/forms/screen-gaze-panel.js', import.meta.url), 'utf8');
-const { ScreenGazePanel } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-class Element {
-  constructor(tag) { this.tag = tag; this.children = []; this.style = {}; this.events = {}; this.isConnected = true; }
-  append(...children) { this.children.push(...children); }
-  replaceChildren(...children) { this.children = children; }
-  setAttribute() {}
-  addEventListener(name, fn) { this.events[name] = fn; }
-  remove() { this.isConnected = false; }
-  focus() {}
-  getBoundingClientRect() { return { width: 1000, height: 600 }; }
-  click() { this.events.click?.(); this.onclick?.(); }
-}
-function setup(send) {
-  globalThis.document = { createElement: tag => new Element(tag), body: new Element('body'), addEventListener() {}, removeEventListener() {}, hidden: false };
-  globalThis.requestAnimationFrame = fn => { fn(); };
-  const timers = globalThis.setTimeout;
-  globalThis.setTimeout = (fn, ms) => timers(fn, ms === 3000 ? 0 : ms);
-  const panel = new ScreenGazePanel({ node: 'screen-node', send, alive: true });
-  const root = new Element('root'); panel.render(root);
-  return { panel, root, restore: () => { globalThis.setTimeout = timers; panel.release(); } };
-}
-async function until(predicate) {
-  for (let i = 0; i < 300; i++) {
-    if (predicate()) return;
-    await new Promise(resolve => setTimeout(resolve, 2));
-  }
-  assert.fail('Panel did not complete');
-}
-test('guided calibration routes all 16 targets and fits through supplied uinode sender', async () => {
-  const calls=[];
-  const h=setup(async (node,cmd,args) => { calls.push({node,cmd,args}); return {status:true,val: cmd==='fitCalibration'?{fit_residual_px:2}:null}; });
-  try {
-    const button=h.root.children[0].children.find(x=>x.textContent==='Calibra 16 punti'); button.click();
-    await until(()=>calls.some(x=>x.cmd==='fitCalibration'));
-    assert(calls.every(x=>x.node==='screen-node'));
-    const targets=calls.filter(x=>x.cmd==='calibrationTarget');
-    assert.equal(targets.length,16); assert.equal(calls.filter(x=>x.cmd==='finishTarget').length,16);
-    assert.deepEqual(calls[0].args,{screen_w:1000,screen_h:600});
-    assert.deepEqual(targets[0].args,{x:80,y:48}); assert.deepEqual(targets.at(-1).args,{x:920,y:552});
-    assert.equal(calls.filter(x=>x.cmd==='cancelCalibration').length,0);
-  } finally { h.restore(); }
+import {ScreenGazePanel} from '../../N2uCore/res/web/iride/lib/ui/forms/screen-gaze-panel.js';
+import {Element,environment,find,descendants,until,point,calibration} from './gaze-dom.mjs';
+function setup(send){const env=environment();const root=new Element('root');const panel=new ScreenGazePanel({node:{settings:{name:'Screen'}},renderer:env.renderer,send,alive:true});panel.render(root);panel.update({...point,status:'uncalibrated',screen_xy_px:null});return {env,root,panel,close(){panel.release();env.restore();}};}
+test('guided calibration routes 16 targets via uinode and replaces only on success',async()=>{
+ const calls=[];const h=setup(async(node,cmd,args)=>{calls.push({node,cmd,args});return {status:true,val:cmd==='fitCalibration'?{fit_residual_px:2}:cmd==='getCalibration'?calibration:null};});
+ try{find(h.root,'Calibra 16 punti').click();await until(()=>calls.some(c=>c.cmd==='getCalibration'));await new Promise(r=>setImmediate(r));
+ assert.equal(calls.filter(c=>c.cmd==='calibrationTarget').length,16);assert.equal(calls.filter(c=>c.cmd==='finishTarget').length,16);
+ assert.deepEqual(calls.find(c=>c.cmd==='beginCalibration').args,{screen_w:1000,screen_h:600});
+ assert(!calls.some(c=>c.cmd==='clearCalibration'));assert.equal(find(h.root,'Cancella calibrazione'),null);
+ }finally{h.close();}
 });
-test('closing the panel during collection cancels and does not fit', async () => {
-  const calls=[]; let h;
-  h=setup(async (_node,cmd) => { calls.push(cmd); if(cmd==='calibrationTarget')h.panel.release(); return {status:true,val:null}; });
-  try {
-    h.root.children[0].children.find(x=>x.textContent==='Calibra 16 punti').click();
-    await until(()=>calls.includes('cancelCalibration'));
-    assert(!calls.includes('fitCalibration')); assert(!calls.includes('finishTarget'));
-  } finally { h.restore(); }
+test('closing during calibration cancels without fitting or deleting existing calibration',async()=>{
+ const calls=[];let h;h=setup(async(_node,cmd)=>{calls.push(cmd);if(cmd==='calibrationTarget')h.panel.release();return {status:true,val:null};});
+ try{find(h.root,'Calibra 16 punti').click();await until(()=>calls.includes('cancelCalibration'));assert(!calls.includes('fitCalibration'));assert(!calls.includes('clearCalibration'));}finally{h.close();}
 });
-test('missing face samples abort collection and show the backend error', async () => {
-  const calls=[];
-  const h=setup(async (_node,cmd) => { calls.push(cmd); return cmd==='finishTarget'?{status:false,err:'At least 3 fresh predictions required'}:{status:true,val:null}; });
-  try {
-    h.root.children[0].children.find(x=>x.textContent==='Calibra 16 punti').click();
-    await until(()=>calls.includes('cancelCalibration'));
-    await new Promise(resolve=>setImmediate(resolve));
-    assert(!calls.includes('fitCalibration'));
-    assert(h.root.children[0].children.some(x=>x.textContent?.includes('3 fresh predictions')));
-  } finally { h.restore(); }
+test('loss of face disables calibration and clears visible point',async()=>{
+ const h=setup(async(_node,cmd)=>({status:true,val:cmd==='getCalibration'?calibration:null}));
+ try{h.panel.attach();await new Promise(r=>setImmediate(r));h.panel.update(point);const toggle=descendants(h.root,'input').find(i=>i.type==='checkbox');toggle.checked=true;toggle.events.change();
+ const dot=document.body.children.find(c=>c.className==='gaze-page-dot');assert.equal(dot.hidden,false);
+ h.panel.update({...point,status:'no_face',screen_xy_px:null});assert.equal(dot.hidden,true);assert.equal(find(h.root,'Calibra 16 punti').disabled,true);
+ }finally{h.close();}
+});
+test('resizing invalidates point coordinates and release unsubscribes and removes overlay',async()=>{
+ const h=setup(async(_node,cmd)=>({status:true,val:cmd==='getCalibration'?calibration:null}));
+ try{h.panel.attach();await new Promise(r=>setImmediate(r));h.panel.update(point);const toggle=descendants(h.root,'input').find(i=>i.type==='checkbox');toggle.checked=true;toggle.events.change();
+ const dot=document.body.children.find(c=>c.className==='gaze-page-dot');assert(!dot.hidden);
+ window.innerWidth=1200;window.events.resize();assert(dot.hidden);assert(toggle.disabled);
+ h.panel.release();assert.equal(h.env.views.size,0);assert(!dot.isConnected);assert.equal(window.events.resize,undefined);
+ }finally{h.close();}
+});
+test('invalid or nonfinite screen coordinates never display a point',async()=>{
+ const h=setup(async(_node,cmd)=>({status:true,val:cmd==='getCalibration'?calibration:null}));
+ try{h.panel.attach();await new Promise(r=>setImmediate(r));const toggle=descendants(h.root,'input').find(i=>i.type==='checkbox');toggle.checked=true;toggle.events.change();
+ for(const screen_xy_px of [[NaN,12],[-1,20],[1000,10],[20,Infinity]]){h.panel.update({...point,screen_xy_px});assert(document.body.children.find(c=>c.className==='gaze-page-dot').hidden);}
+ }finally{h.close();}
+});
+test('stalled stream hides page point even if the last sample was valid',async()=>{
+ const h=setup(async(_node,cmd)=>({status:true,val:cmd==='getCalibration'?calibration:null}));
+ try{h.panel.attach();await new Promise(r=>setImmediate(r));h.panel.update(point);const toggle=descendants(h.root,'input').find(i=>i.type==='checkbox');toggle.checked=true;toggle.events.change();
+ const dot=document.body.children.find(c=>c.className==='gaze-page-dot');assert(!dot.hidden);await new Promise(r=>setTimeout(r,1900));assert(dot.hidden);
+ }finally{h.close();}
+});
+test('hidden page cancels calibration and cannot retain a gaze dot',async()=>{
+ const calls=[];let h;h=setup(async(_node,cmd)=>{calls.push(cmd);if(cmd==='calibrationTarget'){document.hidden=true;document.events.visibilitychange();}return {status:true,val:null};});
+ try{find(h.root,'Calibra 16 punti').click();await until(()=>calls.includes('cancelCalibration'));assert(!calls.includes('fitCalibration'));assert(document.body.children.find(c=>c.className==='gaze-page-dot').hidden);}finally{h.close();}
 });
