@@ -1,8 +1,3 @@
-"""CvCamera -> GazeDINO -> typed TEXT/JSON estimates for Iride.
-
-All image decoding, face detection and PyTorch work runs on MlTicker.
-One frame in flight; upstream frames are drained/dropped, never queued for ML.
-"""
 import json
 import time
 import copy
@@ -23,6 +18,7 @@ class GazeMemoryProvider(MemoryProvider):
     def available(self):
         import torch
         import psutil
+
         if self.device.startswith("cuda") or (self.device == "auto" and torch.cuda.is_available()):
             free, total = torch.cuda.mem_get_info(None if self.device == "auto" else self.device)
             return int(free), int(total)
@@ -32,8 +28,7 @@ class GazeMemoryProvider(MemoryProvider):
 
 class EyeGazeTicker(MlTicker):
     def __init__(self, props):
-        super().__init__(GazeMemoryProvider(props["device"]),
-                         idleTimeoutSecs=props["idleTimeout"])
+        super().__init__(GazeMemoryProvider(props["device"]), idleTimeoutSecs=props["idleTimeout"])
         self.props = props
         self.engine = None
         self.estimate = Signal(self, "estimate")
@@ -45,11 +40,11 @@ class EyeGazeTicker(MlTicker):
 
     def _loadModel(self):
         from N2uCore.inference.gazedino import GazeDinoEngine
+
         path = self.props["checkpoint"]
         if not Path(path).is_absolute():
             path = ResourceManager().absolutePath(path)
-        self.engine = GazeDinoEngine(path, self.props["device"], self.props["hubDir"],
-                                     self.props["emaAlpha"])
+        self.engine = GazeDinoEngine(path, self.props["device"], self.props["hubDir"], self.props["emaAlpha"])
         try:
             self.engine.load()
         except Exception as exc:
@@ -75,11 +70,11 @@ class EyeGazeTicker(MlTicker):
                 self._retry_at = time.monotonic() + 30
                 outcome["status"] = "model_unavailable"
             elif not was_loaded:
-                # Loading can take seconds: this frame is no longer current.
-                # Complete the job without angles and wait for a fresh capture.
+                # Wait for a fresh frame after loading.
                 outcome["status"] = "model_ready"
             else:
                 from N2uCore.multimedia.imgdec import ImageDecoder
+
                 if generation != self._generation:
                     self.engine.reset()
                     self._generation = generation
@@ -126,10 +121,18 @@ class GazeDirection(MlDevice):
         return {"props": dict(self._props)}
 
     def _onInit(self):
-        channel = self.service().addChannel("GazeDirection", FlowChannelType.TEXT, {
-            "format": "json", "schema": "gaze-direction.v1", "angleUnit": "radians",
-            "dependsOn": ["{}.{}".format(self._source["node"], self._source["channel"])],
-            "coordinateSpace": "camera", "vectorConvention": "[sin(yaw)*cos(pitch), -sin(pitch), -cos(yaw)*cos(pitch)]"})
+        channel = self.service().addChannel(
+            "GazeDirection",
+            FlowChannelType.TEXT,
+            {
+                "format": "json",
+                "schema": "gaze-direction.v1",
+                "angleUnit": "radians",
+                "dependsOn": ["{}.{}".format(self._source["node"], self._source["channel"])],
+                "coordinateSpace": "camera",
+                "vectorConvention": "[sin(yaw)*cos(pitch), -sin(pitch), -cos(yaw)*cos(pitch)]",
+            },
+        )
         if not channel:
             return False
         self._output = channel
@@ -156,8 +159,12 @@ class GazeDirection(MlDevice):
         self._receiver.hasData.attach(self._onData)
 
     def _onProperties(self, flow, evt, owner, name, resType, resID, ts, payload):
-        if (evt == FlowEvent.RESOURCE_CHANGED and resType == FlowResource.CHANNEL
-                and self._receiver is not None and resID == self._receiver.chanID()):
+        if (
+            evt == FlowEvent.RESOURCE_CHANGED
+            and resType == FlowResource.CHANNEL
+            and self._receiver is not None
+            and resID == self._receiver.chanID()
+        ):
             self._generation += 1
             self._receiver.clear()
 
@@ -169,8 +176,11 @@ class GazeDirection(MlDevice):
         self._receiver = None
         self.service().emitEvent(FlowEvent.EXTERNAL, "INPUT_DISCONNECTION", self._source)
         if self.isRunning():
-            self.service().publishString(self._output, json.dumps({
-                "schema": "gaze-direction.v1", "status": "input_disconnected"}), time.time_ns()//1000)
+            self.service().publishString(
+                self._output,
+                json.dumps({"schema": "gaze-direction.v1", "status": "input_disconnected"}),
+                time.time_ns() // 1000,
+            )
 
     def _onData(self, receiver):
         latest = receiver.next()
@@ -180,15 +190,25 @@ class GazeDirection(MlDevice):
         if latest is None:
             return
         now = time.monotonic()
-        if (not self.isRunning() or self._ticker is None or self._inFlight
-                or now-self._lastDispatch < 1/self._props["maxFps"]):
+        if (
+            not self.isRunning()
+            or self._ticker is None
+            or self._inFlight
+            or now - self._lastDispatch < 1 / self._props["maxFps"]
+        ):
             self._dropped += 1
             return
         self._inFlight = True
         self._lastDispatch = now
-        self._ticker.loop().invokeSlot(self._ticker.infer, {
-            "data": bytes(latest.data), "props": copy.deepcopy(receiver.props()),
-            "ts": latest.ts, "generation": self._generation})
+        self._ticker.loop().invokeSlot(
+            self._ticker.infer,
+            {
+                "data": bytes(latest.data),
+                "props": copy.deepcopy(receiver.props()),
+                "ts": latest.ts,
+                "generation": self._generation,
+            },
+        )
 
     def _onEstimate(self, pack):
         self._inFlight = False
@@ -210,5 +230,4 @@ class GazeDirection(MlDevice):
         super()._onQuit()
 
 
-# Import compatibility for callers of the initial local prototype.
 EyeGaze = GazeDirection
