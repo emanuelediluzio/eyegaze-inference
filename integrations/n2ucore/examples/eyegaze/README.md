@@ -39,8 +39,8 @@ reload Iride without cache. Do not interrupt active pipelines.
 
 Open the **Screen Point of Gaze** card while the pipeline is running:
 
-- **Calibrate 16 points** displays a 4×4 grid across the Iride browser area. Follow the targets while keeping your head still. Collection lasts 2.8 s per target and discards the first 0.98 s. The panel advances every 3 s.
-- The backend requires at least three fresh predictions per target, filters outliers and computes a cubic fit using at least ten targets and a full-rank matrix. The guided procedure collects all sixteen. Missing faces or a degenerate fit cause the command to fail without replacing the previous calibration.
+- **Calibration points** selects either a 16-point 4×4 grid or a 32-point 8×4 grid across the Iride browser area. Follow the targets while keeping your head still. Collection lasts 2.8 s per target and discards the first 0.98 s. The panel advances every 3 s.
+- The backend requires at least three fresh predictions per target, filters outliers and computes a cubic fit using at least ten targets and a full-rank matrix. The guided procedure collects all selected targets, with a maximum of 32. Missing faces or a degenerate fit cause the command to fail without replacing the previous calibration.
 - **Load calibration / Save calibration** transfers coefficients through `nodeCommand → uinode → Flow`, without direct access to a node or the BlackBox filesystem.
 - **Show point on page** enables the dot inside the Iride page after calibration.
 - **Try fullscreen** expands Iride across the monitor; calibrate after the viewport changes.
@@ -109,3 +109,9 @@ Review with Daniele: contracts and integration into the company runtime, includi
 The `eye-gaze` training repository and the `eyegaze-inference` desktop demo/integration repository use the same model. The two new nodes split **two stages of the same inference pipeline**. `StressGazeInference`, Tobii and BioNormWear concern instrumented acquisition or physiological estimation; they are separate from this pair of nodes.
 
 The **Show point on page** checkbox belongs to the pipeline session. Closing, hiding or minimizing the Screen Point of Gaze card leaves the dot and subscription active when the checkbox is selected. Reopening the card restores the selection; unchecking it hides the dot. Stopping the pipeline clears the session. Stale data, a missing face, disconnection or invalid geometry temporarily hides the dot without changing the preference. Geometry changes require recalibration.
+
+## Held-out accuracy comparison
+
+After each 16- or 32-point calibration, use **Verify accuracy (9 points)**. Its targets differ from both calibration grids; no fit commands are sent during verification. The card retains the latest report for each mode in the same viewport and displays mean error, RMSE and P95 in CSS pixels. Use **Save results** to export JSON before stopping the pipeline. Each verification takes about 27 s.
+
+Keep the setup unchanged, compare both modes, and repeat in reverse order before concluding that 32 targets improve precision. See the [comparison procedure](https://github.com/emanuelediluzio/eyegaze-inference/blob/main/integrations/n2ucore/README.md#comparing-16-and-32-calibration-points) for sampling rules and report details.

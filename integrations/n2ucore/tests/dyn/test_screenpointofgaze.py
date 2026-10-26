@@ -50,9 +50,10 @@ def test_clear_and_cancel():
     n.clearCalibration(None,{})
     assert n._cal.calibration is None
 
-def test_guided_fit_16_targets_and_export():
+@pytest.mark.parametrize("columns", [4, 8])
+def test_guided_fit_16_or_32_targets_and_export(columns):
     c=ScreenCalibration();c.begin(1000,600)
-    for i,x in enumerate(np.linspace(-.3,.3,4)):
+    for i,x in enumerate(np.linspace(-.3,.3,columns)):
         for j,y in enumerate(np.linspace(-.2,.2,4)):
             c.target(500+1000*x,300+1000*y,0,0)
             for k in range(6):c.feed(x,y,1+k*.2,1000000+k*200000)
@@ -91,3 +92,11 @@ def test_registered_command_schemas_accept_real_payloads():
     for name,args in [('setCalibration',{'calibration':CAL}),('beginCalibration',{'screen_w':1000,'screen_h':600}),('calibrationTarget',{'x':500.,'y':300.})]:
         v=JsonValidator();v.setSchema(commands[name]['args'])
         assert v.validate(args),name
+
+
+def test_calibration_has_a_bounded_32_target_limit():
+    c=ScreenCalibration();c.begin(1000,600)
+    c.targets=[[.1,.1,10+i,20+i] for i in range(32)]
+    with pytest.raises(ValueError,match='Maximum 32'):
+        c.target(500,300,0,0)
+    assert len(c.targets)==32

@@ -61,8 +61,8 @@ class ScreenCalibration:
             raise ValueError("Begin calibration first")
         if self.active is not None:
             raise ValueError("Finish the active target first")
-        if len(self.targets) >= 16:
-            raise ValueError("Maximum 16 targets per calibration")
+        if len(self.targets) >= 32:
+            raise ValueError("Maximum 32 targets per calibration")
         if not np.isfinite([x, y]).all() or not (0 <= x < self.size[0] and 0 <= y < self.size[1]):
             raise ValueError("Target outside the calibrated screen")
         self.active = {

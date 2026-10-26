@@ -79,7 +79,7 @@ Import the [portable pipeline](examples/eyegaze/gazedino.iride.json), select the
 
 After installation, restart services using the device’s normal procedure, with the pipeline stopped, and reload Iride without cache. Then start the pipeline.
 
-Open Gaze Direction to see the video, face box, eye markers and gaze arrows; technical details are collapsible. Open Screen Point of Gaze and select **Calibrate 16 points**. To use the whole monitor, enter fullscreen first and calibrate in that mode.
+Open Gaze Direction to see the video, face box, eye markers and gaze arrows; technical details are collapsible. Open Screen Point of Gaze and select **16 or 32 points**, then start calibration. To use the whole monitor, enter fullscreen first and calibrate in that mode.
 
 The **Show point on page** checkbox belongs to the pipeline session: closing, hiding or minimizing the card leaves the dot active; reopening it restores the selected checkbox. Unchecking it hides the dot. Stopping the pipeline clears the session. Missing faces, stale data, disconnections and a hidden page temporarily hide the dot without changing the preference. Changes to window size, window position or display density require recalibration.
 
@@ -155,8 +155,22 @@ To repeat the checks, run from the **N2uCore checkout root** in its Python envir
 ```sh
 python -m pip install -r /path/to/eyegaze-inference/integrations/n2ucore/requirements-dev.txt
 python -m pytest tests/dyn/test_gazeartifact.py tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py -q
-node --test tests/web/gaze-direction-panel.test.mjs tests/web/screen-gaze-panel.test.mjs tests/web/optional-gaze-fields.test.mjs
+node --test tests/web/gaze-direction-panel.test.mjs tests/web/gaze-calibration.test.mjs tests/web/screen-gaze-panel.test.mjs tests/web/optional-gaze-fields.test.mjs
 python tools/verify_eyegaze_iride.py --fixture /path/to/face.png --checkpoint /path/to/model.joblib --hub-dir /path/to/dinov2
 ```
 
 The full test repeats a public image in a test video and does not require a physical webcam. Test dependencies are separate from runtime dependencies.
+
+## Comparing 16 and 32 calibration points
+
+1. Keep the same camera, monitor, browser viewport and seating position. Enter fullscreen before starting if you intend to use fullscreen.
+2. Choose **16 points**, calibrate (about 48 s), then run **Verify accuracy (9 points)** (about 27 s). Follow each new target without moving your head.
+3. Choose **32 points**, calibrate (about 96 s), then repeat the same nine-point verification. The successful second fit replaces the first; save each calibration beforehand if you need both files.
+4. Compare the two rows in the card. A lower mean error and RMSE indicate better pointing on these held-out targets. Repeat both modes, preferably reversing their order, to check that any improvement is consistent.
+5. Use **Save results** to export the validation report as JSON. Results are kept for the pipeline session, including while the card is closed; stopping the pipeline clears them. Imported calibrations have an unknown target count and are labelled accordingly.
+
+Calibration covers a 4×4 or 8×4 grid over the same area. Verification uses a separate 3×3 grid that does not overlap either calibration grid. It never refits the calibration. The first second at each verification target is discarded; only unique, valid, timestamped samples captured after settling count, with at least three observations per target and a bound of 128.
+
+The report records viewport geometry, calibration mode, date, per-target sample counts and errors, overall mean Euclidean error, RMSE, median and P95. Units are **CSS pixels within the browser viewport**, not physical display pixels or degrees. Mean and RMSE weight the nine targets equally; median and P95 use all accepted samples. The page dot is hidden during verification to avoid visual feedback affecting fixation and returns to its previous enabled state afterward. Cancelling, losing fresh face data or changing geometry aborts the test without saving a partial result or changing the calibration.
+
+This is a practical within-session comparison. It does not guarantee that 32 points will outperform 16 or establish accuracy on unseen users.

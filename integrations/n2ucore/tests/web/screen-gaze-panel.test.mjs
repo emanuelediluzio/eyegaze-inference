@@ -79,3 +79,31 @@ test('stopping the pipeline clears closed-card sessions and the next run starts 
  b=h.mount();assert(!b.toggle.checked);await new Promise(r=>setImmediate(r));assert.equal(h.loads(),2);
  }finally{a?.panel.release();b?.panel.release();h.close();}
 });
+test('32-point mode sends all 32 targets and persists its choice and fit size',async()=>{
+ const calls=[];const h=setup(async(node,cmd,args)=>{calls.push({cmd,args});return {status:true,val:cmd==='fitCalibration'?{fit_residual_px:2}:cmd==='getCalibration'?calibration:null};});
+ try{const select=descendants(h.root,'select')[0];select.value='32';select.events.change();find(h.root,'Calibra 32 punti').click();await until(()=>calls.some(c=>c.cmd==='getCalibration'));await new Promise(r=>setImmediate(r));
+ assert.equal(calls.filter(c=>c.cmd==='calibrationTarget').length,32);assert.equal(calls.filter(c=>c.cmd==='finishTarget').length,32);assert.equal(select.value,'32');
+ }finally{h.close();}
+});
+test('independent validation measures nine new targets without calibration commands and restores the dot',async()=>{
+ const calls=[];const h=setup(async(_node,cmd)=>{calls.push(cmd);return {status:true,val:cmd==='getCalibration'?calibration:null};});
+ const oldPerformance=globalThis.performance,oldTimeout=globalThis.setTimeout;let clock=100,ts=1000000;
+ globalThis.performance={now:()=>clock};
+ try{h.panel.attach();await new Promise(r=>setImmediate(r));h.panel.update({...point,source_ts_us:ts});const toggle=descendants(h.root,'input').find(i=>i.type==='checkbox');toggle.checked=true;toggle.events.change();
+ globalThis.setTimeout=(fn,ms)=>oldTimeout(()=>{
+  if(ms===3000){const target=document.body.children.find(c=>c.className==='gaze-calibration').children[0];const x=parseFloat(target.style.left),y=parseFloat(target.style.top);const start=clock;
+   for(let i=0;i<3;i++){clock=start+1200+i*200;ts+=1200000;h.panel.update({...point,screen_xy_px:[x+3,y+4],source_ts_us:ts});}}
+  fn();},ms===3000?0:ms);
+ find(h.root,'Verifica precisione (9 punti)').click();await until(()=>descendants(h.root,'td').length===4);await new Promise(r=>setImmediate(r));
+ assert.equal(descendants(h.root,'td')[1].textContent,'5.0 px');assert(!calls.some(cmd=>cmd!=='getCalibration'));assert(toggle.checked);assert(!document.body.children.find(c=>c.className==='gaze-page-dot').hidden);
+ }finally{globalThis.performance=oldPerformance;globalThis.setTimeout=oldTimeout;h.close();}
+});
+test('cancelling validation saves no partial report and never changes calibration',async()=>{
+ const calls=[];const h=setup(async(_node,cmd)=>{calls.push(cmd);return {status:true,val:cmd==='getCalibration'?calibration:null};});
+ const oldTimeout=globalThis.setTimeout;
+ try{h.panel.attach();await new Promise(r=>setImmediate(r));h.panel.update({...point,source_ts_us:1000000});
+ globalThis.setTimeout=(fn,ms)=>oldTimeout(()=>{if(ms===3000){const overlay=document.body.children.find(c=>c.className==='gaze-calibration');overlay.children[2].click();}fn();},ms===3000?0:ms);
+ find(h.root,'Verifica precisione (9 punti)').click();await until(()=>!document.body.children.some(c=>c.className==='gaze-calibration'));await new Promise(r=>setImmediate(r));
+ assert.equal(descendants(h.root,'td').length,0);assert.deepEqual(calls,['getCalibration']);
+ }finally{globalThis.setTimeout=oldTimeout;h.close();}
+});
