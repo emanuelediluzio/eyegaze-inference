@@ -13,9 +13,11 @@ MERGED = ['N2uCore/res/dyndefs.json', IRIDE + 'schema-ui.json']
 def edit_once(text, before, after, filename):
     if after in text:
         return text
-    if text.count(before) != 1:
+    candidates = [before] if isinstance(before, str) else before
+    matches = [candidate for candidate in candidates if text.count(candidate) == 1]
+    if len(matches) != 1:
         raise ValueError(f'{filename}: incompatible framework; review the integration manually')
-    return text.replace(before, after, 1)
+    return text.replace(matches[0], after, 1)
 
 
 def plan(target):

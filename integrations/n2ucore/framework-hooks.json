@@ -5,8 +5,11 @@
       "  #charts = null;       // il mattoncino dei grafici a linee, se c'\u00e8\n  #panel = null;        // updated: interfaccia propria del nodo (NodePanels), se c'\u00e8\n  #panelShown = true;\n  #panelBox = null;     // la sua casella\n  #modeButton = null;\n"
     ],
     [
-      "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n",
-      "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true,\n                                renderer: options.renderer, inputSources: output.inputSources });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n"
+      [
+        "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n",
+        "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true,\n                                renderer: options.renderer, inputSources: output.inputSources });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n"
+      ],
+      "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true,\n                                renderer: options.renderer, inputSources: output.inputSources, sessionFor: options.sessionFor });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n"
     ],
     [
       "      // card dedicata: un'immagine o un istogramma \u00e8 solo la sua uscita; un grafico riceve tutte le uscite a\n      // linee, perch\u00e9 un multilinea pu\u00f2 prenderne pi\u00f9 d'una (ChartSection mostra solo il suo grafico)\n      const channels = output.outputs.filter(channel => channel.kind === kind && (!solo || kind === \"chart\" || channel.name === solo.name));\n      if (channels.length === 0) continue;\n      const section = new Section({\n",
@@ -43,6 +46,28 @@
     [
       "static PANELS = [",
       "static PANELS = [\n    [\"eyegaze.gazedirection\", GazeDirectionPanel],"
+    ]
+  ],
+  "N2uCore/res/web/iride/app/run/card-board.js": [
+    [
+      " */\n\nimport { Card } from \"./card.js\";\nimport { Texts } from \"../../lib/core/texts.js\";\n",
+      " */\n\nimport { PanelSessions } from \"../../lib/ui/forms/panel-sessions.js\";\nimport { Card } from \"./card.js\";\nimport { Texts } from \"../../lib/core/texts.js\";\n"
+    ],
+    [
+      "  #activity = null;\n  #renderer = null;         // DataSocket: le schede gli cedono i canvas di immagini e grafici\n  #cards = new Map();       // id scheda -> Card\n  #send = null;             // updated: (node, cmd, args) -> Promise risposta, per le interfacce dei nodi (NodePanels)\n",
+      "  #activity = null;\n  #renderer = null;         // DataSocket: le schede gli cedono i canvas di immagini e grafici\n  #panelSessions = new PanelSessions();\n  #cards = new Map();       // id scheda -> Card\n  #send = null;             // updated: (node, cmd, args) -> Promise risposta, per le interfacce dei nodi (NodePanels)\n"
+    ],
+    [
+      "      channels,\n      renderer: this.#renderer,\n      overlays: this.#overlays,\n      onClose: () => this.removeCard(output.id),\n",
+      "      channels,\n      renderer: this.#renderer,\n      sessionFor: (key, create) => this.#panelSessions.get(key, create),\n      overlays: this.#overlays,\n      onClose: () => this.removeCard(output.id),\n"
+    ],
+    [
+      "  refreshAlive() {\n    if (!this.#isAlive) return;\n    for (const card of this.#cards.values()) card.refreshAlive(this.#isAlive);\n  }\n",
+      "  refreshAlive() {\n    if (!this.#isAlive) return;\n    this.#panelSessions.refreshAlive(this.#isAlive);\n    for (const card of this.#cards.values()) card.refreshAlive(this.#isAlive);\n  }\n"
+    ],
+    [
+      "  clear() {\n    for (const card of this.#allCards()) card.release();\n    this.#layer.replaceChildren();\n    this.#cards.clear();\n",
+      "  clear() {\n    for (const card of this.#allCards()) card.release();\n    this.#panelSessions.clear();\n    this.#layer.replaceChildren();\n    this.#cards.clear();\n"
     ]
   ]
 }

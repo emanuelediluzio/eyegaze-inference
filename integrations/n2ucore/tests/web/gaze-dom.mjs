@@ -15,8 +15,14 @@ export function find(root,text){if(root.textContent===text)return root;for(const
 export function descendants(root,tag){return [...(root.tag===tag?[root]:[]),...(root.children??[]).flatMap(c=>descendants(c,tag))];}
 export function environment() {
  const old={document:globalThis.document,window:globalThis.window,requestAnimationFrame:globalThis.requestAnimationFrame,setTimeout:globalThis.setTimeout};
- globalThis.document={createElement:t=>new Element(t),createElementNS:(_ns,t)=>new Element(t),createTextNode:text=>Object.assign(new Element('text'),{textContent:text}),body:new Element('body'),head:new Element('head'),querySelector:()=>null,hidden:false,events:{},addEventListener(k,f){this.events[k]=f;},removeEventListener(k){delete this.events[k];}};
- globalThis.window={innerWidth:1000,innerHeight:600,screenX:0,screenY:0,devicePixelRatio:1,events:{},addEventListener(k,f){this.events[k]=f;},removeEventListener(k){delete this.events[k];}};
+ function eventTarget(object) {
+  const handlers=new Map();object.events={};
+  object.addEventListener=(key,fn)=>{if(!handlers.has(key))handlers.set(key,new Set());handlers.get(key).add(fn);object.events[key]=(...args)=>{for(const listener of [...handlers.get(key)])listener(...args);};};
+  object.removeEventListener=(key,fn)=>{handlers.get(key)?.delete(fn);if(!handlers.get(key)?.size){handlers.delete(key);delete object.events[key];}};
+  return object;
+ }
+ globalThis.document=eventTarget({createElement:t=>new Element(t),createElementNS:(_ns,t)=>new Element(t),createTextNode:text=>Object.assign(new Element('text'),{textContent:text}),body:new Element('body'),head:new Element('head'),querySelector:()=>null,hidden:false});
+ globalThis.window=eventTarget({innerWidth:1000,innerHeight:600,screenX:0,screenY:0,devicePixelRatio:1});
  globalThis.requestAnimationFrame=fn=>fn();
  globalThis.setTimeout=(fn,ms)=>old.setTimeout(fn,ms===3000?0:ms);
  const views=new Map();const calls=[];

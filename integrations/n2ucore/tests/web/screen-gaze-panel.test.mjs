@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {PanelSessions} from '../../N2uCore/res/web/iride/lib/ui/forms/panel-sessions.js';
 import {ScreenGazePanel} from '../../N2uCore/res/web/iride/lib/ui/forms/screen-gaze-panel.js';
 import {Element,environment,find,descendants,until,point,calibration} from './gaze-dom.mjs';
 function setup(send){const env=environment();const root=new Element('root');const panel=new ScreenGazePanel({node:{settings:{name:'Screen'}},renderer:env.renderer,send,alive:true});panel.render(root);panel.update({...point,status:'uncalibrated',screen_xy_px:null});return {env,root,panel,close(){panel.release();env.restore();}};}
@@ -26,7 +27,7 @@ test('resizing invalidates point coordinates and release unsubscribes and remove
  const h=setup(async(_node,cmd)=>({status:true,val:cmd==='getCalibration'?calibration:null}));
  try{h.panel.attach();await new Promise(r=>setImmediate(r));h.panel.update(point);const toggle=descendants(h.root,'input').find(i=>i.type==='checkbox');toggle.checked=true;toggle.events.change();
  const dot=document.body.children.find(c=>c.className==='gaze-page-dot');assert(!dot.hidden);
- window.innerWidth=1200;window.events.resize();assert(dot.hidden);assert(toggle.disabled);
+ window.innerWidth=1200;window.events.resize();assert(dot.hidden);assert(toggle.checked);assert(!toggle.disabled);
  h.panel.release();assert.equal(h.env.views.size,0);assert(!dot.isConnected);assert.equal(window.events.resize,undefined);
  }finally{h.close();}
 });
@@ -45,4 +46,36 @@ test('stalled stream hides page point even if the last sample was valid',async()
 test('hidden page cancels calibration and cannot retain a gaze dot',async()=>{
  const calls=[];let h;h=setup(async(_node,cmd)=>{calls.push(cmd);if(cmd==='calibrationTarget'){document.hidden=true;document.events.visibilitychange();}return {status:true,val:null};});
  try{find(h.root,'Calibra 16 punti').click();await until(()=>calls.includes('cancelCalibration'));assert(!calls.includes('fitCalibration'));assert(document.body.children.find(c=>c.className==='gaze-page-dot').hidden);}finally{h.close();}
+});
+
+function persistentSetup() {
+ const env=environment(), sessions=new PanelSessions();let loads=0;
+ const mount=()=>{const root=new Element('root');const panel=new ScreenGazePanel({node:{settings:{name:'Screen'}},renderer:env.renderer,alive:true,sessionFor:(key,create)=>sessions.get(key,create),send:async(_node,cmd)=>{if(cmd==='getCalibration')loads++;return {status:true,val:cmd==='getCalibration'?calibration:null};}});panel.render(root);panel.attach();return {root,panel,toggle:descendants(root,'input').find(i=>i.type==='checkbox')};};
+ const emit=(sample)=>{for(const view of env.views.values())view.handlers.onInfo({topic:'text',text:JSON.stringify(sample)});};
+ return {env,sessions,mount,emit,loads:()=>loads,dot:()=>document.body.children.find(c=>c.className==='gaze-page-dot'),close(){sessions.clear();env.restore();}};
+}
+test('closing and reopening a card preserves the page point and selected checkbox with one stream',async()=>{
+ const h=persistentSetup();let a,b;
+ try{a=h.mount();await new Promise(r=>setImmediate(r));h.emit(point);a.toggle.checked=true;a.toggle.events.change();const dot=h.dot();assert(!dot.hidden);
+ a.panel.release();assert.equal(h.env.views.size,1);h.emit({...point,screen_xy_px:[750,400]});assert(!dot.hidden);assert.equal(dot.style.left,'750px');
+ b=h.mount();await new Promise(r=>setImmediate(r));assert(b.toggle.checked);assert.equal(h.loads(),1);assert.equal(h.env.views.size,1);assert.equal(document.body.children.filter(c=>c.className==='gaze-page-dot').length,1);
+ b.toggle.checked=false;b.toggle.events.change();assert(dot.hidden);b.panel.release();assert.equal(h.env.views.size,0);
+ }finally{a?.panel.release();b?.panel.release();h.close();}
+});
+test('closed-card point hides temporarily on stale data, disconnect and viewport changes without losing preference',async()=>{
+ const h=persistentSetup();let a,b;
+ try{a=h.mount();await new Promise(r=>setImmediate(r));h.emit(point);a.toggle.checked=true;a.toggle.events.change();a.panel.release();const dot=h.dot();
+ await new Promise(r=>setTimeout(r,1900));assert(dot.hidden);h.emit(point);assert(!dot.hidden);
+ h.sessions.refreshAlive(()=>false);assert(dot.hidden);h.sessions.refreshAlive(()=>true);h.emit(point);assert(!dot.hidden);
+ document.hidden=true;document.events.visibilitychange();assert(dot.hidden);document.hidden=false;document.events.visibilitychange();h.emit(point);assert(!dot.hidden);
+ window.innerWidth=1200;window.events.resize();assert(dot.hidden);window.innerWidth=1000;window.events.resize();h.emit(point);assert(dot.hidden);
+ b=h.mount();assert(b.toggle.checked);b.toggle.checked=false;b.toggle.events.change();assert(dot.hidden);
+ }finally{a?.panel.release();b?.panel.release();h.close();}
+});
+test('stopping the pipeline clears closed-card sessions and the next run starts unchecked',async()=>{
+ const h=persistentSetup();let a,b;
+ try{a=h.mount();await new Promise(r=>setImmediate(r));h.emit(point);a.toggle.checked=true;a.toggle.events.change();a.panel.release();const dot=h.dot();h.sessions.clear();
+ assert(!dot.isConnected);assert.equal(h.env.views.size,0);assert.equal(window.events.resize,undefined);
+ b=h.mount();assert(!b.toggle.checked);await new Promise(r=>setImmediate(r));assert.equal(h.loads(),2);
+ }finally{a?.panel.release();b?.panel.release();h.close();}
 });
