@@ -3,7 +3,7 @@
   "class": "GazeDirection",
   "name": "GazeDino",
   "props": {
-    "checkpoint": "models/gazedino/best_run3_3.24deg.pt",
+    "checkpoint": "models/gazedino/model.joblib",
     "device": "auto",
     "hubDir": "",
     "maxFps": 15.0,

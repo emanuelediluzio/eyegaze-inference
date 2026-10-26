@@ -7,6 +7,7 @@ N2uCore/
   dyn/eyegaze.py                  GazeDirection(MlDevice), EyeGazeTicker(MlTicker)
   dyn/screenpointofgaze.py         ScreenPointOfGaze(SwDevice)
   inference/gazedino.py           Motore PyTorch e rilevamento del volto
+  inference/gazeartifact.py       Contratto e export minimale dei pesi
   inference/screengaze.py         Proiezione e calibrazione
   res/dyndefs.json                Frammento del catalogo: solo i due nodi
   res/web/iride/schema-ui.json    Frammento delle impostazioni UI
@@ -56,16 +57,27 @@ L'ambiente verificato sul Mac usa Python 3.11, MediaPipe 0.10.21 e NumPy 1.26.4;
 la distribuzione in questa cartella non certifica ancora l'esecuzione su Windows
 o Linux. Il secondo nodo richiede NumPy e il framework, senza usare PyTorch.
 
-Scaricare `best_run3_3.24deg.pt` dalla release di
-[eye-gaze su GitHub](https://github.com/emanuelediluzio/eye-gaze/releases/tag/v1.0-weights)
-oppure dalla [release interna](http://192.168.70.200:3000/ediluzio/eye-gaze/releases/tag/v1.0-weights).
-Copiarlo nel checkout di destinazione in
-`N2uCore/res/models/gazedino/best_run3_3.24deg.pt`, oppure indicare nel nodo
-un percorso assoluto sul computer che lo esegue.
+Il nodo usa l’export minimale `gazedino_inference.joblib` dalla
+[release inference-v1](https://github.com/emanuelediluzio/eyegaze-inference/releases/tag/inference-v1).
+Copiarlo in `N2uCore/res/models/gazedino/model.joblib`, oppure indicare un
+percorso assoluto nel parametro Checkpoint. Il formato è un dizionario versionato
+con pesi NumPy float32, architettura, preprocessing, convenzione delle uscite e
+provenienza. Non contiene ottimizzatore, dataset o oggetti del modello Python.
+Il nodo resta `MlDevice`/`MlTicker` e ricostruisce la rete PyTorch con caricamento
+rigoroso dei pesi. Caricare solo artifact provenienti da fonti fidate.
 
-SHA-256: `b68131063b6475f85e1ca152113b45d96b413a25c5e2dd517276b2f53cb796a0`.
-I pesi non sono inclusi nei sorgenti Git. Per operare offline servono anche le
-sorgenti DINOv2: predisporle e impostare `hubDir` sul percorso locale.
+Per creare lo stesso export dal checkpoint originale di training:
+
+```sh
+python tools/export_eyegaze.py --source /percorso/best_run3_3.24deg.pt --output /percorso/model.joblib
+```
+
+L’export verifica tutti i tensori dopo la scrittura e non sovrascrive file già
+esistenti. Il checkpoint originale `.pt` resta supportato per compatibilità e
+rimane quello usato dalla GUI desktop originale; la nuova variante non cambia
+i pesi, la precisione numerica o la calibrazione.
+Per operare offline servono anche le sorgenti DINOv2: predisporle e impostare
+`hubDir` sul percorso locale. I pesi sono allegati alla release, non al Git dei sorgenti.
 
 ## Utilizzo e verifica
 
@@ -79,7 +91,7 @@ Dopo l'installazione, dalla radice del checkout **N2uCore**:
 ```sh
 python -m pytest tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py -q
 node --test tests/web/optional-gaze-fields.test.mjs tests/web/screen-gaze-panel.test.mjs
-python tools/verify_eyegaze_iride.py --fixture /percorso/volto.png --checkpoint /percorso/best_run3_3.24deg.pt --hub-dir /percorso/dinov2
+python tools/verify_eyegaze_iride.py --fixture /percorso/volto.png --checkpoint /percorso/model.joblib --hub-dir /percorso/dinov2
 ```
 
 I test Python richiedono pytest e quelli di trasporto websocket-client; sono
@@ -96,7 +108,7 @@ frecce. I dettagli JSON restano chiusi nella scheda.
 
 Screen Point of Gaze mostra un’anteprima e il punto sopra la pagina Iride,
 con `pointer-events: none`. Il punto sparisce su perdita del volto, campioni
-fermi, disconnessione, pagina nascosta o riduzione/chiusura della scheda. Cambi
+fermi, disconnessione, pagina nascosta; chiudere o ridurre la scheda conserva il check e il pallino. Cambi
 di dimensioni, posizione della finestra o densità del display richiedono una
 nuova calibrazione; non vengono riscalate silenziosamente coordinate vecchie.
 La modalità schermo intero va calibrata dopo l’ingresso nel nuovo viewport.
@@ -115,3 +127,13 @@ Il limite predefinito di inferenza è 15 FPS, senza coda: se il modello è più 
 Su Mac mini M1, una prova ripetuta con immagine pubblica a 1920×1080 ha misurato circa 100–150 ms per analisi completa su MPS; ridurre a 1280×720 non ha dato un vantaggio. Questi dati descrivono il calcolo, non la latenza completa della webcam o della rete. Nessun cambio dei pesi, della precisione numerica o del nodo webcam. La scheda aggiorna le metriche esistenti e formatta i dettagli JSON solo quando sono aperti.
 
 Il check **Mostra punto nella pagina** appartiene alla sessione della pipeline. Chiudere, nascondere o ridurre la card Screen Point of Gaze lascia attivi pallino e sottoscrizione se il check è selezionato. Riaprire la card ripristina la selezione; togliere il check nasconde il pallino. Fermare la pipeline elimina la sessione. Dati non recenti, volto assente, disconnessione o geometria non valida nascondono temporaneamente il punto senza cambiare la preferenza. Dopo un cambio di geometria occorre ricalibrare.
+
+### Artifact minimale verificato
+
+`gazedino_inference.joblib`: 324.174.954 byte (circa 309 MiB), contro
+1.044.671.152 byte del checkpoint di training. SHA-256:
+`d265ced7c0840c5f8f7d8880b2876d52b27313f337651e575f3975f8cd319cf4`.
+Tutti i 183 tensori float32 sono identici. Il confronto su cinque crop di
+un’immagine pubblica, con lo stesso preprocessing su MPS, ha dato differenza
+massima delle predizioni di 0 radianti. Questo verifica la parità dell’export,
+non una nuova misura dell’accuratezza. Il [report](examples/eyegaze/inference-export-verification.json) conserva dimensioni, hash ed esito.

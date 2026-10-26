@@ -8,7 +8,7 @@
     "PROPS_SCHEMA": {
       "checkpoint": {
         "type": "STR",
-        "default": "models/gazedino/best_run3_3.24deg.pt"
+        "default": "models/gazedino/model.joblib"
       },
       "device": {
         "type": "ENUM",

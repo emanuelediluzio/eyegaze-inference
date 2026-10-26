@@ -36,7 +36,8 @@ class GazeDinoEngine:
             device = "cuda" if torch.cuda.is_available() else (
                 "mps" if torch.backends.mps.is_available() else "cpu")
         self.device = torch.device(device)
-        checkpoint = torch.load(self.checkpoint, map_location="cpu", weights_only=True)
+        from N2uCore.inference.gazeartifact import load_model_state
+        model_state = load_model_state(self.checkpoint)
         hub_source = self.hub_dir
         if not hub_source:
             cached = Path(torch.hub.get_dir()) / "facebookresearch_dinov2_main"
@@ -57,7 +58,8 @@ class GazeDinoEngine:
                 return inner.head(inner.backbone(x))
 
         model = GazeDINO()
-        model.load_state_dict(checkpoint["model"], strict=True)
+        model.load_state_dict(model_state, strict=True)
+        del model_state
         self.model = model.eval().to(self.device)
         self.transform = T.Compose([
             T.ToPILImage(), T.Resize((224, 224)), T.ToTensor(),

@@ -7,3 +7,4 @@ mediapipe==0.10.21
 numpy>=1.24,<2
 Pillow>=10.0.0
 psutil
+joblib>=1.3

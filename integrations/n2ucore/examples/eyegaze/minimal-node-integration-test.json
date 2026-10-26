@@ -1,0 +1,173 @@
+{
+  "passed": true,
+  "transport": "WebSocket -> uinode -> sysinit -> CvCamera -> Flow -> GazeDirection/MlTicker -> Flow -> ScreenPointOfGaze -> Flow -> uinode -> WebSocket",
+  "physical_camera": false,
+  "accuracy_evaluated": false,
+  "fixture": "gaze-perf-face.png",
+  "checkpoint": "gazedino_inference.joblib",
+  "samples": [
+    {
+      "schema": "gaze-direction.v1",
+      "status": "ok",
+      "yaw_rad": 0.028147753328084946,
+      "pitch_rad": -0.07867276668548584,
+      "yaw_deg": 1.6127474684745842,
+      "pitch_deg": -4.507617493695765,
+      "direction_xyz": [
+        0.02805698408796902,
+        0.07859163553823609,
+        -0.9965119971517215
+      ],
+      "coordinate_space": "camera",
+      "bbox_xyxy_px": [
+        225,
+        64,
+        337,
+        166
+      ],
+      "confidence": null,
+      "image_size_px": [
+        640,
+        480
+      ],
+      "eyes_px": [
+        [
+          254.5673942565918,
+          94.60056781768799
+        ],
+        [
+          308.11634063720703,
+          96.98102474212646
+        ]
+      ],
+      "source_ts_us": 1793028614187162,
+      "dropped_frames": 76
+    },
+    {
+      "schema": "gaze-direction.v1",
+      "status": "ok",
+      "yaw_rad": 0.02465381333604455,
+      "pitch_rad": -0.08680672198534012,
+      "yaw_deg": 1.4125594530586971,
+      "pitch_deg": -4.973658803125483,
+      "direction_xyz": [
+        0.024558495397024864,
+        0.08669774239057146,
+        -0.9959319162313318
+      ],
+      "coordinate_space": "camera",
+      "bbox_xyxy_px": [
+        225,
+        61,
+        338,
+        167
+      ],
+      "confidence": null,
+      "image_size_px": [
+        640,
+        480
+      ],
+      "eyes_px": [
+        [
+          254.23946380615234,
+          94.62236166000366
+        ],
+        [
+          308.27564239501953,
+          96.84698581695557
+        ]
+      ],
+      "source_ts_us": 1793028614455954,
+      "dropped_frames": 77
+    },
+    {
+      "schema": "gaze-direction.v1",
+      "status": "ok",
+      "yaw_rad": 0.011389030027203262,
+      "pitch_rad": -0.09270993806421757,
+      "yaw_deg": 0.652543353306512,
+      "pitch_deg": -5.3118881699989275,
+      "direction_xyz": [
+        0.011339874810000058,
+        0.09257718609269042,
+        -0.9956409352042798
+      ],
+      "coordinate_space": "camera",
+      "bbox_xyxy_px": [
+        225,
+        60,
+        338,
+        167
+      ],
+      "confidence": null,
+      "image_size_px": [
+        640,
+        480
+      ],
+      "eyes_px": [
+        [
+          254.37767028808594,
+          94.47210788726807
+        ],
+        [
+          307.94803619384766,
+          96.80698156356812
+        ]
+      ],
+      "source_ts_us": 1793028614590494,
+      "dropped_frames": 78
+    }
+  ],
+  "screen_points": [
+    {
+      "schema": "screen-point-of-gaze.v1",
+      "coordinate_space": "screen_pixels",
+      "source_ts_us": 1793028614860905,
+      "status": "ok",
+      "screen_xy_px": [
+        499,
+        289
+      ],
+      "screen_size_px": [
+        1000,
+        600
+      ]
+    },
+    {
+      "schema": "screen-point-of-gaze.v1",
+      "coordinate_space": "screen_pixels",
+      "source_ts_us": 1793028614994529,
+      "status": "ok",
+      "screen_xy_px": [
+        498,
+        289
+      ],
+      "screen_size_px": [
+        1000,
+        600
+      ]
+    },
+    {
+      "schema": "screen-point-of-gaze.v1",
+      "coordinate_space": "screen_pixels",
+      "source_ts_us": 1793028615129941,
+      "status": "ok",
+      "screen_xy_px": [
+        498,
+        289
+      ],
+      "screen_size_px": [
+        1000,
+        600
+      ]
+    }
+  ],
+  "uncalibrated_verified": true,
+  "projection_parity": true,
+  "max_control_rtt_ms": 18.725290894508362,
+  "control_reconnects": 0,
+  "server_url": "ws://127.0.0.1:57232",
+  "sysinit": "GazeTestSys0eafa694",
+  "palette_defaults": false,
+  "stopped_to_idle": true
+}

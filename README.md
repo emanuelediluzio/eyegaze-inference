@@ -404,3 +404,7 @@ Cosmetic only — does not affect performance or accuracy. Can be safely ignored
 ## License
 
 MIT
+
+### Export minimale per i nodi N2uCore
+
+La variante `gazedino_inference.joblib` nella [release inference-v1](https://github.com/emanuelediluzio/eyegaze-inference/releases/tag/inference-v1) contiene solo pesi e contratto di inferenza; esclude lo stato dell’ottimizzatore. Vedere [installazione ed esportazione](integrations/n2ucore/README.md). La GUI desktop mantiene il checkpoint `.pt` originale.

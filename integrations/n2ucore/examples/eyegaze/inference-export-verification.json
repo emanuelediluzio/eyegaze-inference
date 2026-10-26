@@ -1,0 +1,16 @@
+{
+  "source_sha256": "b68131063b6475f85e1ca152113b45d96b413a25c5e2dd517276b2f53cb796a0",
+  "artifact_sha256": "d265ced7c0840c5f8f7d8880b2876d52b27313f337651e575f3975f8cd319cf4",
+  "source_bytes": 1044671152,
+  "artifact_bytes": 324174954,
+  "tensor_count": 183,
+  "all_weights_exact": true,
+  "prediction_crops": 5,
+  "device": [
+    "mps",
+    "mps"
+  ],
+  "max_prediction_delta_rad": 0.0,
+  "same_preprocessing": true,
+  "accuracy_retrained": false
+}

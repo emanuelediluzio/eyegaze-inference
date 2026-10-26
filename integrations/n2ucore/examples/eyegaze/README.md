@@ -25,7 +25,7 @@ Il campo webcam ID `0` seleziona la prima camera del computer che esegue il nodo
 `1`, `2`, ecc. selezionano altre camere. L’ordine può cambiare tra macchine.
 Windows usa DirectShow, Linux V4L2; verificare i permessi della camera.
 
-Il checkpoint predefinito è `N2uCore/res/models/gazedino/best_run3_3.24deg.pt`
+Il checkpoint predefinito è `N2uCore/res/models/gazedino/model.joblib`
 nel checkout N2uCore di destinazione. `hubDir` può rimanere vuoto: vengono usate
 le sorgenti DINOv2 nella cache Torch, oppure scaricate da GitHub se assenti.
 Per funzionare offline, predisporre anche quelle sorgenti e indicarne il percorso.
@@ -91,7 +91,7 @@ Gli stati `no_face`, `model_ready`, `model_unavailable`, `error`, `input_disconn
 python -m pytest tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py tests/dyn/wrk/test_mldevice.py -q
 node --test tests/web/screen-gaze-panel.test.mjs
 python tools/verify_eyegaze_iride.py --fixture /path/to/face.png \
-  --checkpoint /path/to/best_run3_3.24deg.pt --hub-dir /path/to/dinov2
+  --checkpoint /path/to/model.joblib --hub-dir /path/to/dinov2
 ```
 
 Il test d'integrazione avvia servizi isolati e un video di prova; controlla la catena `Iride WS → uinode → sysinit → telecamera → direzione → proiezione → Iride WS`, i timestamp, lo stato non calibrato, caricamento/cancellazione della calibrazione e la corrispondenza numerica dei pixel agli angoli originali. Arresta la pipeline e attende IDLE. Non usa la webcam né modifica le pipeline esistenti. La calibrazione numerica del test è sintetica: verifica il software, non la precisione di un soggetto reale.
