@@ -18,3 +18,11 @@ test('pausing and disconnecting remove stale overlays and preserve shared subscr
  panel.setPaused(false);panel.update(direction);panel.setAlive(false);assert.equal(descendants(root,'path').length,0);
  }finally{panel.release();env.restore();}
 });
+test('live updates reuse metric elements and format technical JSON only when expanded',()=>{
+ const env=environment();const panel=new GazeDirectionPanel({node:{settings:{name:'Gaze'}},renderer:env.renderer});const root=new Element('root');
+ try{panel.render(root);const values=descendants(root,'dd');const details=descendants(root,'details')[0];const log=descendants(root,'pre')[0];
+ panel.update(direction);panel.update({...direction,yaw_deg:20});
+ assert.equal(descendants(root,'dd')[0],values[0]);assert.equal(values[0].textContent,'20.0°');assert.equal(log.textContent,'');
+ details.open=true;details.events.toggle();assert.equal(JSON.parse(log.textContent).yaw_deg,20);
+ }finally{panel.release();env.restore();}
+});

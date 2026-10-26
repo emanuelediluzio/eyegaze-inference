@@ -127,3 +127,10 @@ def test_display_metadata_contains_only_frame_size_and_two_iris_centers():
     assert sample['image_size_px'] == [200, 100]
     assert sample['eyes_px'] == [[100, 50], [100, 50]]
     assert len(sample['eyes_px']) == 2
+
+def test_default_rate_accepts_fresh_frame_within_old_quarter_second_limit(monkeypatch):
+    n=bare_node()
+    ticks=iter([10.,10.1]);monkeypatch.setattr('N2uCore.dyn.eyegaze.time.monotonic',lambda:next(ticks))
+    n._onData(receiver(1));n._inFlight=False;n._onData(receiver(2))
+    assert n._ticker.loop().invokeSlot.call_count==2
+    assert n._props['maxFps']==15

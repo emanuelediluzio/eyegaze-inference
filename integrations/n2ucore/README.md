@@ -107,3 +107,9 @@ calibrazione viene applicata soltanto dopo un fit riuscito.
 
 I punti sono limitati alla pagina Iride, non al desktop o ad altre schede.
 La precisione va verificata con la persona e il monitor reali.
+
+### Frequenza e latenza
+
+Il limite predefinito di inferenza è 15 FPS, senza coda: se il modello è più lento, il nodo continua a usare il frame più recente disponibile. I progetti già salvati mantengono il loro valore esplicito di `maxFps`: impostarlo a 15 per eliminare il precedente tetto conservativo di 4 FPS. Il valore è un massimo, non una frequenza garantita; dipende da dispositivo, modello e carico. Lo smussamento EMA resta invariato (alpha 0,25).
+
+Su Mac mini M1, una prova ripetuta con immagine pubblica a 1920×1080 ha misurato circa 100–150 ms per analisi completa su MPS; ridurre a 1280×720 non ha dato un vantaggio. Questi dati descrivono il calcolo, non la latenza completa della webcam o della rete. Nessun cambio dei pesi, della precisione numerica o del nodo webcam. La scheda aggiorna le metriche esistenti e formatta i dettagli JSON solo quando sono aperti.

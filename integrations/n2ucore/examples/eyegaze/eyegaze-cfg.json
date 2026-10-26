@@ -6,7 +6,7 @@
     "checkpoint": "models/gazedino/best_run3_3.24deg.pt",
     "device": "auto",
     "hubDir": "",
-    "maxFps": 4.0,
+    "maxFps": 15.0,
     "emaAlpha": 0.25,
     "idleTimeout": 600
   },

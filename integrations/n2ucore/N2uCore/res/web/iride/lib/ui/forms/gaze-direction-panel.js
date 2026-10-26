@@ -3,7 +3,7 @@ let nextVideo=0;
 export class GazeDirectionPanel {
   static channels=["GazeDirection"];
   static preferredWidth=780;
-  #o; #root; #status; #canvas; #svg; #stats; #details; #stream; #timer; #last=0; #sample=null; #alive; #paused=false; #released=false; #videoId; #videoShown=false; #box=true; #arrows=true; #eyes=true; #rate=0;
+  #o; #root; #status; #canvas; #svg; #stats; #details; #stream; #timer; #last=0; #sample=null; #alive; #paused=false; #released=false; #videoId; #videoShown=false; #box=true; #arrows=true; #eyes=true; #rate=0; #metricValues=[]; #detailsBox;
   constructor(options) { this.#o=options; this.#alive=options.alive ?? true; this.#videoId="gaze-video-"+(++nextVideo); }
   render(container) {
     gazeStyles();this.#root=el("section","gaze-panel gaze-direction");
@@ -18,7 +18,8 @@ export class GazeDirectionPanel {
     }
     main.append(controls,el("p","gaze-hint","Guarda la webcam mantenendo il volto visibile. Le frecce rappresentano la direzione, non il punto sul monitor."));
     const side=el("aside","gaze-readings");side.append(el("h3","","Sguardo in tempo reale"));this.#stats=el("dl","gaze-metrics");side.append(this.#stats);
-    const details=el("details","gaze-details");details.append(el("summary","","Dettagli tecnici"));this.#details=el("pre");details.append(this.#details);side.append(details);layout.append(main,side);this.#root.append(header,layout);container.replaceChildren(this.#root);
+    for(const label of ["Orizzontale · yaw","Verticale · pitch","Stime al secondo"]){const value=el("dd","","—");this.#metricValues.push(value);this.#stats.append(el("dt","",label),value);}
+    const details=el("details","gaze-details");details.append(el("summary","","Dettagli tecnici"));this.#detailsBox=details;this.#details=el("pre");details.append(this.#details);details.addEventListener("toggle",()=>this.#showDetails());side.append(details);layout.append(main,side);this.#root.append(header,layout);container.replaceChildren(this.#root);
     this.#stream=new GazeStream(this.#o,"GazeDirection",s=>this.update(s),s=>this.#status.textContent=s);this.#metrics(null);
   }
   attach() {
@@ -44,12 +45,14 @@ export class GazeDirectionPanel {
   update(sample) {
     if(this.#released || this.#paused || !this.#alive || sample.schema!=="gaze-direction.v1")return;
     const now=performance.now();if(this.#last && now>this.#last)this.#rate=this.#rate ? .8*this.#rate+.2*1000/(now-this.#last) : 1000/(now-this.#last);this.#last=now;
-    this.#sample=sample;this.#status.textContent=statusText(sample.status);this.#details.textContent=JSON.stringify(sample,null,2);this.#metrics(sample);this.#draw();
+    this.#sample=sample;this.#status.textContent=statusText(sample.status);this.#showDetails();this.#metrics(sample);this.#draw();
   }
   #metrics(s) {
     const angle=v=>Number.isFinite(v)?v.toFixed(1)+"°":"—";
-    this.#stats.replaceChildren();for(const [name,value] of [["Orizzontale · yaw",angle(s?.yaw_deg)],["Verticale · pitch",angle(s?.pitch_deg)],["Stime al secondo",s?this.#rate.toFixed(1):"—"]])this.#stats.append(el("dt","",name),el("dd","",value));
+    const values=[angle(s?.yaw_deg),angle(s?.pitch_deg),s?this.#rate.toFixed(1):"—"];
+    values.forEach((value,i)=>{if(this.#metricValues[i].textContent!==value)this.#metricValues[i].textContent=value;});
   }
+  #showDetails() { if(this.#detailsBox?.open && this.#sample)this.#details.textContent=JSON.stringify(this.#sample,null,2); }
   #draw() {
     this.#svg.replaceChildren();const s=this.#sample;
     if(s?.status!=="ok" || !Array.isArray(s.image_size_px) || !s.image_size_px.every(v=>Number.isFinite(v)&&v>0) || !Array.isArray(s.bbox_xyxy_px) || s.bbox_xyxy_px.length!==4 || !s.bbox_xyxy_px.every(Number.isFinite) || !Number.isFinite(s.yaw_rad) || !Number.isFinite(s.pitch_rad))return;
