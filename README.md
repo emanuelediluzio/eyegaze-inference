@@ -1,5 +1,25 @@
 # eyegaze-inference — GazeDINO Real-Time Inference
 
+
+## Start here: joblib and Next2U Core / Iride nodes
+
+**Integrating the nodes into Next2U Core / Iride?** Start with the [dedicated integration README](integrations/n2ucore/README.md). It is separate from the desktop GUI instructions below.
+
+| What you need | Location |
+|---|---|
+| **Minimal inference joblib — 324 MB** | **[Download `gazedino_inference.joblib`](https://github.com/emanuelediluzio/eyegaze-inference/releases/download/inference-v1/gazedino_inference.joblib)** · **[Download from Gitea](http://192.168.70.200:3000/attachments/8a538e7d-0727-4b6b-81d3-77c27c6deb06)** · [release details](http://192.168.70.200:3000/ediluzio/eyegaze-inference/releases/tag/inference-v1) |
+| **Gaze Direction node** | [integrations/n2ucore/N2uCore/dyn/eyegaze.py](integrations/n2ucore/N2uCore/dyn/eyegaze.py) |
+| **Screen Point of Gaze node** | [integrations/n2ucore/N2uCore/dyn/screenpointofgaze.py](integrations/n2ucore/N2uCore/dyn/screenpointofgaze.py) |
+| **Complete integration package and installer** | [integrations/n2ucore/](integrations/n2ucore/README.md) — includes engines, catalogue entries, Iride panels and framework hooks |
+
+The model is a **release attachment**, not part of `git clone`. In the target N2uCore checkout, place it at **`N2uCore/res/models/gazedino/model.joblib`** and set the node’s **Checkpoint path** to **`models/gazedino/model.joblib`**. Install the complete integration package: the two node source files alone are not sufficient.
+
+The joblib retains all 183 float32 tensors exactly and omits optimizer/training state. Its file size is about 69% smaller than the original checkpoint; it still runs the same PyTorch GazeDINO network through `MlDevice` / `MlTicker`. See the [artifact contract, checksum and verification reports](integrations/n2ucore/README.md#contenuto-del-joblib-ed-export).
+
+**Running the standalone Python GUI instead?** Continue below. That application uses the original **`.pt` checkpoint** and its own desktop calibration. For the node installation, use the dedicated README linked above.
+
+---
+
 Real-time gaze estimation powered by **GazeDINO** (DINOv2 ViT-B/14 + MLP head).
 No training code, no dataset dependency. Drop in the checkpoint and run.
 
@@ -9,6 +29,7 @@ Best model: **3.24° mean angular error**.
 
 ## Table of Contents
 
+- [Next2U Core / Iride integration](integrations/n2ucore/README.md)
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -24,14 +45,6 @@ Best model: **3.24° mean angular error**.
 - [License](#license)
 
 ---
-
-## N2uCore / Iride nodes
-
-The [N2uCore integration](integrations/n2ucore/README.md) includes two sequential
-nodes: **Gaze Direction** (`MlDevice` / `MlTicker`) and **Screen Point of Gaze**
-(`SwDevice`), plus guided calibration in Iride. Sources preserve the framework's
-folder hierarchy. Its installer merges the two catalogue entries and UI changes
-into an existing N2uCore checkout without replacing unrelated nodes.
 
 ## Architecture
 
@@ -404,7 +417,3 @@ Cosmetic only — does not affect performance or accuracy. Can be safely ignored
 ## License
 
 MIT
-
-### Export minimale per i nodi N2uCore
-
-La variante `gazedino_inference.joblib` nella [release inference-v1](https://github.com/emanuelediluzio/eyegaze-inference/releases/tag/inference-v1) contiene solo pesi e contratto di inferenza; esclude lo stato dell’ottimizzatore. Vedere [installazione ed esportazione](integrations/n2ucore/README.md). La GUI desktop mantiene il checkpoint `.pt` originale.
