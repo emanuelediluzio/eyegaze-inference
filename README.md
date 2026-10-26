@@ -14,7 +14,7 @@
 
 The model is a **release attachment**, not part of `git clone`. In the target N2uCore checkout, place it at **`N2uCore/res/models/gazedino/model.joblib`** and set the node’s **Checkpoint path** to **`models/gazedino/model.joblib`**. Install the complete integration package: the two node source files alone are not sufficient.
 
-The joblib retains all 183 float32 tensors exactly and omits optimizer/training state. Its file size is about 69% smaller than the original checkpoint; it still runs the same PyTorch GazeDINO network through `MlDevice` / `MlTicker`. See the [artifact contract, checksum and verification reports](integrations/n2ucore/README.md#contenuto-del-joblib-ed-export).
+The joblib retains all 183 float32 tensors exactly and omits optimizer/training state. Its file size is about 69% smaller than the original checkpoint; it still runs the same PyTorch GazeDINO network through `MlDevice` / `MlTicker`. See the [artifact contract, checksum and verification reports](integrations/n2ucore/README.md#joblib-contents-and-export).
 
 **Running the standalone Python GUI instead?** Continue below. That application uses the original **`.pt` checkpoint** and its own desktop calibration. For the node installation, use the dedicated README linked above.
 

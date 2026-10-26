@@ -1,160 +1,162 @@
-# Eye Gaze — integrazione in Next2U Core / Iride
+# Eye Gaze — Next2U Core / Iride integration
 
-Questa guida è per chi deve integrare i due nodi in un checkout esistente di **N2uCore** e usarli da **Iride**. Il [README principale](../../README.md) descrive anche l’applicazione Python desktop; qui trovi il pacchetto per il framework.
+This guide is for developers integrating the two nodes into an existing **N2uCore** checkout and using them from **Iride**. The [main README](../../README.md) also covers the standalone Python desktop application; this guide covers the framework package.
 
-## Subito: joblib e sorgenti dei nodi
+## Start here: joblib and node source files
 
-| Cosa serve | Dove si trova | Destinazione / funzione |
+| What you need | Location | Destination / purpose |
 |---|---|---|
-| **Modello minimale `gazedino_inference.joblib`** | **[Download diretto GitHub](https://github.com/emanuelediluzio/eyegaze-inference/releases/download/inference-v1/gazedino_inference.joblib)** · **[Download diretto Gitea](http://192.168.70.200:3000/attachments/8a538e7d-0727-4b6b-81d3-77c27c6deb06)** · [dettagli release](http://192.168.70.200:3000/ediluzio/eyegaze-inference/releases/tag/inference-v1) | Copiare e rinominare in **`N2uCore/res/models/gazedino/model.joblib`** nel framework di destinazione |
-| **Nodo Gaze Direction** | [N2uCore/dyn/eyegaze.py](N2uCore/dyn/eyegaze.py) | `GazeDirection(MlDevice)` e `EyeGazeTicker(MlTicker)`: dal video a yaw/pitch e vettore 3D |
-| **Nodo Screen Point of Gaze** | [N2uCore/dyn/screenpointofgaze.py](N2uCore/dyn/screenpointofgaze.py) | `ScreenPointOfGaze(SwDevice)`: dalla direzione al punto sullo schermo, dopo calibrazione |
-| **Installazione completa** | [install.py](install.py) · [framework-hooks.json](framework-hooks.json) | Installa motori, catalogo, pannelli Iride e collegamenti necessari nel framework |
-| **Pipeline di esempio** | [examples/eyegaze/gazedino.iride.json](examples/eyegaze/gazedino.iride.json) | Importare in Iride e scegliere il SysInit e la webcam del dispositivo di destinazione |
+| **Minimal `gazedino_inference.joblib` model** | **[Direct GitHub download](https://github.com/emanuelediluzio/eyegaze-inference/releases/download/inference-v1/gazedino_inference.joblib)** · **[Direct Gitea download](http://192.168.70.200:3000/attachments/8a538e7d-0727-4b6b-81d3-77c27c6deb06)** · [release details](http://192.168.70.200:3000/ediluzio/eyegaze-inference/releases/tag/inference-v1) | Copy and rename to **`N2uCore/res/models/gazedino/model.joblib`** in the target framework |
+| **Gaze Direction node** | [N2uCore/dyn/eyegaze.py](N2uCore/dyn/eyegaze.py) | `GazeDirection(MlDevice)` and `EyeGazeTicker(MlTicker)`: video to yaw/pitch and a 3D vector |
+| **Screen Point of Gaze node** | [N2uCore/dyn/screenpointofgaze.py](N2uCore/dyn/screenpointofgaze.py) | `ScreenPointOfGaze(SwDevice)`: gaze direction to a screen point after calibration |
+| **Complete installation** | [install.py](install.py) · [framework-hooks.json](framework-hooks.json) | Installs engines, catalogue entries, Iride panels and the required framework hooks |
+| **Example pipeline** | [examples/eyegaze/gazedino.iride.json](examples/eyegaze/gazedino.iride.json) | Import into Iride and select the target device’s SysInit and webcam |
 
-**Il joblib è un allegato della release, non è incluso nel clone Git.** Pesa **324.174.954 byte** (circa 324 MB / 309 MiB), circa il **69% in meno** del checkpoint di training da 1.044.671.152 byte.
+**The joblib is a release attachment and is not included in a Git clone.** Its size is **324,174,954 bytes** (about 324 MB / 309 MiB), approximately **69% smaller** than the 1,044,671,152-byte training checkpoint.
 
-SHA-256 del joblib della release `inference-v1`:
+SHA-256 of the joblib in release `inference-v1`:
 
 ```text
 d265ced7c0840c5f8f7d8880b2876d52b27313f337651e575f3975f8cd319cf4
 ```
 
-Per un’integrazione funzionante prendere **l’intero contenuto di questa cartella**, non soltanto i due file `dyn/*.py`: i nodi dipendono dai motori di inferenza, dalle voci di catalogo e dai pannelli Iride elencati sotto. L’installer applica questi componenti mantenendo la gerarchia del framework.
+For a working integration, use **the complete contents of this directory**, not just the two `dyn/*.py` files: the nodes depend on the inference engines, catalogue entries and Iride panels listed below. The installer places these components in the framework’s existing directory hierarchy.
 
-## 1. Installare nel framework esistente
+## 1. Install into the existing framework
 
-Prerequisiti: checkout N2uCore con `MlDevice`, `MlTicker`, `WorkerFlowInput`, catalogo dinamico e Iride. Il Python da usare è quello configurato nel **SysInit che eseguirà i nodi**.
+Prerequisites: an N2uCore checkout with `MlDevice`, `MlTicker`, `WorkerFlowInput`, the dynamic node catalogue and Iride. Use the Python environment configured in the **SysInit that will execute the nodes**.
 
-Dalla radice del repository `eyegaze-inference`, a pipeline ferma:
+From the root of the `eyegaze-inference` repository, with the pipeline stopped:
 
 ```sh
 python -m pip install -r integrations/n2ucore/requirements.txt
-python integrations/n2ucore/install.py "/percorso/al/checkout/n2ucore"
-python integrations/n2ucore/install.py "/percorso/al/checkout/n2ucore" --apply
+python integrations/n2ucore/install.py "/path/to/n2ucore"
+python integrations/n2ucore/install.py "/path/to/n2ucore" --apply
 ```
 
-Su Windows il percorso può essere, per esempio, `C:/repos/n2ucore`. La chiamata senza `--apply` mostra l’anteprima. Quella con `--apply` verifica prima tutti i punti di integrazione, poi scrive e conserva i file precedenti in `.gaze-integration-backups/`.
+On Windows, a target path could be `C:/repos/n2ucore`. Running without `--apply` previews the changes. Running with `--apply` checks all integration points before writing and backs up existing files under `.gaze-integration-backups/`.
 
-L’installer unisce le voci dei due nodi nei cataloghi esistenti, preservando le altre voci. I JSON distribuiti sotto `N2uCore/res/` sono **frammenti da unire**, non cataloghi completi da sostituire. Gli adattamenti condivisi di Card/CardBoard, pannelli e campi facoltativi sono dichiarati in `framework-hooks.json` e `install.py`. Se il framework è incompatibile, il preflight termina senza scrivere. Ripetere l’installazione sullo stesso codice non applica modifiche ulteriori.
+The installer merges the two nodes into the existing catalogues while preserving other entries. The JSON files under `N2uCore/res/` are **fragments to merge**, not complete replacement catalogues. Shared Card/CardBoard hooks, panel registration and optional-field support are declared in `framework-hooks.json` and `install.py`. If the framework is incompatible, preflight stops without writing. Repeating the installation against the same code produces no further changes.
 
-L’installer non avvia servizi, non installa pesi e non modifica la configurazione della webcam. Questa cartella è un overlay del framework: non va usata come framework alternativo aggiungendola al `PYTHONPATH`.
+The installer does not start services, install weights or change the webcam configuration. This directory is a framework overlay: do not add it to `PYTHONPATH` as an alternative framework.
 
-## 2. Posizionare il joblib
+## 2. Place the joblib
 
-Scaricare il modello dai link iniziali. Nel checkout **N2uCore di destinazione** creare la cartella e collocare il file così:
+Download the model using the links above. Create the target directory in the **destination N2uCore checkout** and place the file at:
 
 ```text
 N2uCore/res/models/gazedino/model.joblib
 ```
 
-Il parametro **Checkpoint path** di Gaze Direction deve essere:
+Set Gaze Direction’s **Checkpoint path** parameter to:
 
 ```text
 models/gazedino/model.joblib
 ```
 
-Questo è il valore predefinito dei nuovi nodi. I progetti Iride già salvati conservano i propri valori: se puntano ancora al `.pt` originale, aggiornare questo parametro. È possibile usare anche un percorso assoluto, riferito al computer che esegue il nodo.
+This is the default for new nodes. Existing saved Iride projects retain their explicit settings: update this parameter if they still reference the original `.pt` file. An absolute path is also supported; it must refer to the computer executing the node.
 
-Servono inoltre le **sorgenti DINOv2**. Con **Local DINOv2 source directory (offline)** vuoto il motore usa la cache Torch `facebookresearch_dinov2_main`, oppure scarica le sorgenti se assenti. Per un apparato offline predisporre la cache o indicare esplicitamente la cartella locale contenente `hubconf.py`. Il caricamento usa `pretrained=False`: tutti i pesi del backbone sono già nel joblib.
+The **DINOv2 source code** is also required. When **Local DINOv2 source directory (offline)** is empty, the engine uses the Torch cache `facebookresearch_dinov2_main`, or downloads the source if it is missing. For an offline device, prepare the cache or explicitly provide a local directory containing `hubconf.py`. Loading uses `pretrained=False`: all backbone weights are already included in the joblib.
 
-## 3. Avviare in Iride
+## 3. Run in Iride
 
-La pipeline è:
+The pipeline is:
 
 ```text
 WebCam.VideoStream → GazeDirection.VideoStream
 GazeDirection.GazeDirection → ScreenPointOfGaze.GazeDirection
 ```
 
-Importare la [pipeline portabile](examples/eyegaze/gazedino.iride.json), scegliere il SysInit corretto e verificare l’ID della webcam **sul computer che esegue WebCam**. L’ID dipende dall’ordine dei dispositivi su quella macchina.
+Import the [portable pipeline](examples/eyegaze/gazedino.iride.json), select the correct SysInit and verify the webcam ID **on the computer executing WebCam**. The ID depends on device enumeration on that machine.
 
-| Impostazione | Valore / significato |
+| Setting | Value / meaning |
 |---|---|
 | Gaze Direction — Checkpoint path | `models/gazedino/model.joblib` |
-| Compute device | `auto`: CUDA, MPS o CPU secondo disponibilità |
-| Maximum inference FPS | `15`: limite massimo, non frequenza garantita |
-| Local DINOv2 source directory (offline) | Facoltativo; cache o sorgenti locali come descritto sopra |
-| Screen Point of Gaze — Screen calibration JSON | Facoltativo; senza calibrazione il nodo emette `uncalibrated` |
+| Compute device | `auto`: CUDA, MPS or CPU, depending on availability |
+| Maximum inference FPS | `15`: an upper limit, not a guaranteed rate |
+| Local DINOv2 source directory (offline) | Optional; cached or local source as described above |
+| Screen Point of Gaze — Screen calibration JSON | Optional; without calibration, the node emits `uncalibrated` |
 
-Dopo l’installazione riavviare i servizi con la procedura prevista dall’apparato, a pipeline ferma, e ricaricare Iride senza cache. Avviare quindi la pipeline.
+After installation, restart services using the device’s normal procedure, with the pipeline stopped, and reload Iride without cache. Then start the pipeline.
 
-Aprire Gaze Direction per vedere video, volto, occhi e frecce; i dettagli tecnici sono richiudibili. Aprire Screen Point of Gaze e usare **Calibra 16 punti**. Per usare tutto il monitor entrare prima a schermo intero e calibrare in quella modalità.
+Open Gaze Direction to see the video, face box, eye markers and gaze arrows; technical details are collapsible. Open Screen Point of Gaze and select **Calibrate 16 points**. To use the whole monitor, enter fullscreen first and calibrate in that mode.
 
-Il check **Mostra punto nella pagina** appartiene alla sessione della pipeline: chiudere, nascondere o ridurre la card lascia attivo il pallino; riaprendola il check resta selezionato. Togliere il check lo nasconde. Lo stop della pipeline elimina la sessione. Volto assente, dati non recenti, disconnessione e pagina nascosta nascondono temporaneamente il punto senza cambiare la preferenza. Cambiare dimensioni, posizione della finestra o densità del display richiede una nuova calibrazione.
+The **Show point on page** checkbox belongs to the pipeline session: closing, hiding or minimizing the card leaves the dot active; reopening it restores the selected checkbox. Unchecking it hides the dot. Stopping the pipeline clears the session. Missing faces, stale data, disconnections and a hidden page temporarily hide the dot without changing the preference. Changes to window size, window position or display density require recalibration.
 
-**Carica/Salva calibrazione** sono nelle Opzioni avanzate. Il relativo JSON contiene coefficienti e dimensioni dell’area calibrata; è distinto dal joblib dei pesi. Annullare una nuova calibrazione conserva quella precedente. Il pallino viene disegnato nella pagina Iride e non può restare visibile sopra altre applicazioni o dopo la chiusura del browser.
+**Load/Save calibration** are under Advanced options. The calibration JSON contains coefficients and calibrated area dimensions; it is separate from the model’s joblib. Cancelling a new calibration preserves the previous fit. The dot is drawn inside the Iride page and cannot remain above other applications or after the browser closes.
 
-Per contratti dei canali, dettagli della calibrazione e compatibilità dei JSON vedere [examples/eyegaze/README.md](examples/eyegaze/README.md).
+Control names in this guide describe the corresponding panel actions in English. This documentation update does not change the installed UI language.
 
-## File da integrare e gerarchia
+For channel contracts, calibration details and JSON compatibility, see [examples/eyegaze/README.md](examples/eyegaze/README.md).
 
-I percorsi seguenti sono relativi a questa cartella e corrispondono ai percorsi nel checkout N2uCore:
+## Integration files and directory hierarchy
+
+These paths are relative to this directory and match their destinations in the N2uCore checkout:
 
 ```text
 N2uCore/
-  dyn/eyegaze.py                         Nodo ML e ticker dedicato
-  dyn/screenpointofgaze.py               Nodo di proiezione e calibrazione
-  inference/gazedino.py                  Rete PyTorch e rilevamento del volto
-  inference/gazeartifact.py              Contratto, caricamento ed export joblib
-  inference/screengaze.py                Fit e proiezione della calibrazione
-  res/dyndefs.json                       Frammento del catalogo dei due nodi
-  res/web/iride/schema-ui.json           Frammento dei parametri Iride
+  dyn/eyegaze.py                         ML node and dedicated ticker
+  dyn/screenpointofgaze.py               Projection and calibration node
+  inference/gazedino.py                  PyTorch network and face detection
+  inference/gazeartifact.py              Joblib contract, loader and exporter
+  inference/screengaze.py                Calibration fitting and projection
+  res/dyndefs.json                       Catalogue fragment for the two nodes
+  res/web/iride/schema-ui.json           Iride settings fragment
   res/web/iride/lib/ui/forms/
-    gaze-direction-panel.js             Card video e direzione
-    screen-gaze-panel.js                 Card e controlli di calibrazione
-    screen-gaze-session.js               Pallino indipendente dalla card
-    panel-sessions.js                    Stato dei pannelli per la pipeline
-    gaze-ui.js                          Utilità e viste DataSocket condivise
-  res/web/iride/css/app/gaze-panels.css   Stili delle card e del pallino
-examples/eyegaze/                        Pipeline, sketch e documentazione
-tests/dyn/                             Test Python
-tests/web/                             Test dell’interfaccia
-tools/export_eyegaze.py                 Export del checkpoint originale
-tools/verify_eyegaze_iride.py            Test completo del trasporto
+    gaze-direction-panel.js             Video and direction card
+    screen-gaze-panel.js                 Calibration card and controls
+    screen-gaze-session.js               Dot independent of card visibility
+    panel-sessions.js                    Pipeline-owned panel state
+    gaze-ui.js                          Shared DataSocket views and helpers
+  res/web/iride/css/app/gaze-panels.css   Card and dot styles
+examples/eyegaze/                        Pipelines, sketches and documentation
+tests/dyn/                              Python tests
+tests/web/                              UI tests
+tools/export_eyegaze.py                  Original checkpoint exporter
+tools/verify_eyegaze_iride.py            Full transport integration test
 ```
 
-Gaze Direction mantiene il pattern **`MlDevice` / `MlTicker`**: decodifica, rilevamento del volto e PyTorch girano sul thread ML, con un solo frame in elaborazione e scarto dei frame superati. Il formato joblib non cambia la rete in un modello tabellare. Screen Point of Gaze usa **`SwDevice`** e NumPy; non carica il modello neurale. Iride comunica solo con **uinode**, tramite i canali WebSocket del framework; tra i nodi si usa Flow.
+Gaze Direction follows the **`MlDevice` / `MlTicker`** pattern: decoding, face detection and PyTorch inference run on the ML thread, with one frame in flight and obsolete frames dropped. The joblib format does not turn the network into a tabular model. Screen Point of Gaze uses **`SwDevice`** and NumPy; it does not load the neural network. Iride communicates only with **uinode**, using the framework’s WebSocket channels; nodes communicate through Flow.
 
-## Contenuto del joblib ed export
+## Joblib contents and export
 
-Il file è un dizionario con schema `n2u.gazedino.inference.v1`:
+The file is a dictionary using schema `n2u.gazedino.inference.v1`:
 
-| Campo | Contenuto |
+| Field | Contents |
 |---|---|
-| `format` | Versione del contratto dell’artifact |
-| `architecture` | GazeDINO, backbone DINOv2 ViT-B/14 e dimensioni della testa |
-| `preprocessing` | RGB, resize 224×224 e normalizzazione ImageNet |
-| `output` | Ordine yaw/pitch, in radianti |
-| `state_dict` | 183 tensori conservati come array NumPy float32 |
-| `metadata` | SHA-256 del checkpoint sorgente ed errore di validazione riportato dal checkpoint |
+| `format` | Artifact contract version |
+| `architecture` | GazeDINO, the DINOv2 ViT-B/14 backbone and head dimensions |
+| `preprocessing` | RGB, 224×224 resize and ImageNet normalization |
+| `output` | Yaw/pitch order, in radians |
+| `state_dict` | 183 tensors stored as NumPy float32 arrays |
+| `metadata` | Source checkpoint SHA-256 and the validation error reported by that checkpoint |
 
-Non contiene ottimizzatore, dataset, cronologia di training o un’istanza serializzata della classe del modello. Il loader ricostruisce la rete PyTorch e carica i pesi con `strict=True`. Usare artifact provenienti da fonti fidate.
+It contains no optimizer, dataset, training history or serialized model-class instance. The loader reconstructs the PyTorch network and loads weights with `strict=True`. Use artifacts from trusted sources.
 
-Per creare una nuova copia minimale, dalla radice del checkout **N2uCore dopo l’installazione**:
+To create a new minimal copy, run from the **N2uCore checkout root after installation**:
 
 ```sh
-python tools/export_eyegaze.py --source /percorso/best_run3_3.24deg.pt --output /percorso/model.joblib
+python tools/export_eyegaze.py --source /path/to/best_run3_3.24deg.pt --output /path/to/model.joblib
 ```
 
-L’export rilegge il file generato e confronta tutti i pesi con gli originali; non sovrascrive una destinazione esistente. Il `.pt` originale resta supportato dal nodo per compatibilità ed è il formato usato dalla GUI desktop.
+The exporter reads the generated file back and compares every weight against the source; it does not overwrite an existing destination. The original `.pt` remains supported by the node for compatibility and is the format used by the desktop GUI.
 
-## Verifiche e limiti misurati
+## Verification and measured limits
 
-- **183 tensori float32 identici** al checkpoint originale; nessuna quantizzazione o modifica dei pesi.
-- **Predizioni identiche su cinque crop** di un’immagine pubblica, con differenza massima di 0 radianti su MPS, sia localmente sia sul Mac mini. [Report di parità e checksum](examples/eyegaze/inference-export-verification.json).
-- **Test completo sul Mac mini** con video di prova: WebSocket → uinode → sysinit → WebCam → Gaze Direction/MlTicker → Screen Point of Gaze → WebSocket, verifica della proiezione e arresto a IDLE. [Report del test](examples/eyegaze/minimal-node-integration-test.json).
-- Ambiente verificato: Python 3.11, MediaPipe 0.10.21, NumPy 1.26.4 e MPS. Scegliere build torch/torchvision adatte all’hardware. Windows e Linux non sono ancora certificati con prove equivalenti.
+- **183 float32 tensors identical** to the original checkpoint, with no quantization or weight changes.
+- **Identical predictions on five crops** of a public image, with a maximum difference of 0 radians on MPS, verified locally and on the Mac mini. [Parity and checksum report](examples/eyegaze/inference-export-verification.json).
+- **Full Mac mini integration test** using a test video: WebSocket → uinode → sysinit → WebCam → Gaze Direction/MlTicker → Screen Point of Gaze → WebSocket, including projection checks and shutdown to IDLE. [Test report](examples/eyegaze/minimal-node-integration-test.json).
+- Verified environment: Python 3.11, MediaPipe 0.10.21, NumPy 1.26.4 and MPS. Select torch/torchvision builds suited to the target hardware. Windows and Linux have not yet been certified through equivalent tests.
 
-La riduzione del file elimina lo stato di addestramento; il modello rimane DINOv2 ViT-B/14. Non è una misura di minore costo computazionale. Una prova sul Mac mini M1 ha misurato circa 100–150 ms per analisi completa; `maxFps=15` è un tetto. La parità dell’export non costituisce una nuova validazione dell’accuratezza: il puntamento va verificato sulla persona e sul monitor reali, su target non usati per calibrare.
+The file reduction removes training state; the network remains DINOv2 ViT-B/14. It is not evidence of a lower computational cost. A Mac mini M1 benchmark measured approximately 100–150 ms per full analysis; `maxFps=15` is a ceiling. Export parity is not a new accuracy validation: pointing accuracy must be checked with the actual person and monitor, using targets excluded from calibration.
 
-Per ripetere i controlli, dalla radice del checkout **N2uCore** e nel suo ambiente Python:
+To repeat the checks, run from the **N2uCore checkout root** in its Python environment:
 
 ```sh
-python -m pip install -r /percorso/eyegaze-inference/integrations/n2ucore/requirements-dev.txt
+python -m pip install -r /path/to/eyegaze-inference/integrations/n2ucore/requirements-dev.txt
 python -m pytest tests/dyn/test_gazeartifact.py tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py -q
 node --test tests/web/gaze-direction-panel.test.mjs tests/web/screen-gaze-panel.test.mjs tests/web/optional-gaze-fields.test.mjs
-python tools/verify_eyegaze_iride.py --fixture /percorso/volto.png --checkpoint /percorso/model.joblib --hub-dir /percorso/dinov2
+python tools/verify_eyegaze_iride.py --fixture /path/to/face.png --checkpoint /path/to/model.joblib --hub-dir /path/to/dinov2
 ```
 
-Il test completo usa un’immagine pubblica ripetuta in un video di prova; non richiede una webcam fisica. Le dipendenze di test sono separate da quelle di esecuzione.
+The full test repeats a public image in a test video and does not require a physical webcam. Test dependencies are separate from runtime dependencies.

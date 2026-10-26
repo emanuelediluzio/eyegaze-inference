@@ -1,58 +1,60 @@
 # Gaze Direction → Screen Point of Gaze
 
-Due nodi separati, collegati tramite Flow:
+Two separate nodes connected through Flow:
 
 ```text
 CvCamera.VideoStream → GazeDirection.VideoStream
 GazeDirection.GazeDirection → ScreenPointOfGaze.GazeDirection
 ```
 
-| Nodo | Classe | Ingresso | Uscita |
+| Node | Class | Input | Output |
 |---|---|---|---|
-| Gaze Direction | `N2uCore.dyn.eyegaze.GazeDirection` (`MlDevice`) | Video RGB del volto | `GazeDirection`: yaw/pitch in radianti e gradi, vettore 3D unitario, stato e timestamp |
-| Screen Point of Gaze | `N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze` (`SwDevice`) | Direzione dello sguardo | `ScreenPoint`: X/Y in pixel, dimensioni dello schermo calibrato e stato |
+| Gaze Direction | `N2uCore.dyn.eyegaze.GazeDirection` (`MlDevice`) | RGB face video | `GazeDirection`: yaw/pitch in radians and degrees, unit 3D vector, status and timestamp |
+| Screen Point of Gaze | `N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze` (`SwDevice`) | Gaze direction | `ScreenPoint`: X/Y in pixels, calibrated screen dimensions and status |
 
-Il modello gira **solo nel primo nodo**. Il secondo non carica PyTorch, MediaPipe o una telecamera: applica una trasformazione polinomiale leggera e gestisce la calibrazione. Puoi utilizzare Gaze Direction da solo. Screen Point of Gaze richiede l'uscita del primo nodo (contratto `gaze-direction.v1`).
+The model runs **only in the first node**. The second loads neither PyTorch nor MediaPipe and does not open a camera: it applies a lightweight polynomial transformation and manages calibration. Gaze Direction can run on its own. Screen Point of Gaze requires the first node’s output, following the `gaze-direction.v1` contract.
 
-Entrambi i canali sono TEXT con JSON UTF-8, già leggibili nelle viste testo Iride. Non usano il tipo GAZE Tobii: quel formato rappresenta pupille in mm e coordinate del video della scena, non gli angoli della webcam o i pixel dello schermo.
+Both channels use TEXT with UTF-8 JSON and are readable through Iride’s text views. They do not use the Tobii GAZE type: that format represents pupil measurements in millimetres and scene-video coordinates, rather than webcam gaze angles or screen pixels.
 
-## Configurazione sul computer di destinazione
+## Target computer configuration
 
-Installare l’integrazione seguendo il README nella radice di `integrations/n2ucore`.
-Assegnare i tre nodi a un SysInit con le dipendenze ML disponibili. Importare
-`gazedino.iride.json` e scegliere il SysInit corretto; quello di esempio è `SysInit`.
-Il campo webcam ID `0` seleziona la prima camera del computer che esegue il nodo;
-`1`, `2`, ecc. selezionano altre camere. L’ordine può cambiare tra macchine.
-Windows usa DirectShow, Linux V4L2; verificare i permessi della camera.
+Install the integration using the [integration README](https://github.com/emanuelediluzio/eyegaze-inference/blob/main/integrations/n2ucore/README.md).
+Assign the three nodes to a SysInit with the required ML dependencies. Import
+`gazedino.iride.json` and choose the correct SysInit; the example uses `SysInit`.
+Webcam ID `0` selects the first camera on the computer executing the node;
+`1`, `2`, etc. select other cameras. Device ordering can differ between machines.
+Windows uses DirectShow and Linux uses V4L2; check camera permissions.
 
-Il checkpoint predefinito è `N2uCore/res/models/gazedino/model.joblib`
-nel checkout N2uCore di destinazione. `hubDir` può rimanere vuoto: vengono usate
-le sorgenti DINOv2 nella cache Torch, oppure scaricate da GitHub se assenti.
-Per funzionare offline, predisporre anche quelle sorgenti e indicarne il percorso.
-`calibrationPath` è facoltativo e appartiene solo a Screen Point of Gaze.
-Senza calibrazione il nodo pubblica `uncalibrated`, con `screen_xy_px: null`.
+The default checkpoint is `N2uCore/res/models/gazedino/model.joblib`
+in the target N2uCore checkout. `hubDir` can remain empty: the engine uses
+DINOv2 sources from the Torch cache, or downloads them from GitHub if missing.
+For offline use, prepare those sources and provide their local directory.
+`calibrationPath` is optional and belongs only to Screen Point of Gaze.
+Without calibration, that node publishes `uncalibrated` with `screen_xy_px: null`.
 
-Riavviare i servizi con la procedura dell’apparato dopo l’installazione e ricaricare
-Iride senza cache. Non interrompere pipeline attive.
+After installation, restart services using the device’s normal procedure and
+reload Iride without cache. Do not interrupt active pipelines.
 
-## Calibrazione guidata in Iride
+## Guided calibration in Iride
 
-Aprire la card del nodo **Screen Point of Gaze** a pipeline avviata:
+Open the **Screen Point of Gaze** card while the pipeline is running:
 
-- **Calibra 16 punti**: mostra una griglia 4×4 sull'area del browser Iride; seguire i punti tenendo ferma la testa. La raccolta dura 2,8 s per punto e scarta i primi 0,98 s. Il pannello avanza ogni 3 s.
-- Il backend richiede almeno 3 predizioni fresche per punto, filtra gli outlier e calcola un fit cubico con almeno 10 punti e matrice di rango pieno. Il percorso guidato raccoglie tutti i 16 punti. Se il volto manca o il fit è degenere, il comando fallisce senza sostituire la calibrazione precedente.
-- **Carica calibrazione / Salva calibrazione**: trasferiscono i coefficienti tramite `nodeCommand → uinode → Flow`, senza accedere direttamente al nodo o al filesystem della BlackBox.
-- **Mostra punto nella pagina**: abilita il pallino nella pagina Iride dopo la calibrazione.
-- **Prova a schermo intero**: estende Iride al monitor; calibrare dopo il cambio di viewport.
-- **Esc / Annulla**, cambio di dimensioni della finestra, pagina nascosta o perdita del nodo annullano la procedura. La perdita del flusso direzionale annulla anche la raccolta sul backend.
+- **Calibrate 16 points** displays a 4×4 grid across the Iride browser area. Follow the targets while keeping your head still. Collection lasts 2.8 s per target and discards the first 0.98 s. The panel advances every 3 s.
+- The backend requires at least three fresh predictions per target, filters outliers and computes a cubic fit using at least ten targets and a full-rank matrix. The guided procedure collects all sixteen. Missing faces or a degenerate fit cause the command to fail without replacing the previous calibration.
+- **Load calibration / Save calibration** transfers coefficients through `nodeCommand → uinode → Flow`, without direct access to a node or the BlackBox filesystem.
+- **Show point on page** enables the dot inside the Iride page after calibration.
+- **Try fullscreen** expands Iride across the monitor; calibrate after the viewport changes.
+- **Esc / Cancel**, window resizing, a hidden page or loss of the node cancels the procedure. Loss of the gaze-direction stream also cancels collection on the backend.
 
-I punti guidati sono espressi in **pixel CSS dell'area di Iride**. Le coordinate risultanti hanno lo stesso riferimento; non sono coordinate globali del desktop. Per applicare il risultato a un intero monitor occorre un viewport a schermo intero, stabile durante calibrazione e utilizzo, o una trasformazione esplicita di origine/scala. Non spostare la telecamera o cambiare seduta dopo aver calibrato.
+Control names in this guide describe the corresponding panel actions in English. This documentation update does not change the installed UI language.
 
-La card Gaze Direction mostra video, riquadro del volto, centri degli occhi e frecce dello sguardo. La card Screen Point of Gaze gestisce calibrazione e pallino nell’area di Iride, anche a schermo intero. I dati tecnici restano disponibili in una sezione richiudibile e come stream JSON. Il pallino non può sovrapporsi alle altre applicazioni del desktop.
+Guided targets use **CSS pixels within the Iride area**. Output coordinates use the same reference; they are not global desktop coordinates. To apply the output across an entire monitor, use a fullscreen viewport that remains stable throughout calibration and operation, or provide an explicit origin/scale transformation. Do not move the camera or change your seating position after calibration.
 
-### Compatibilità con le calibrazioni esistenti
+The Gaze Direction card displays video, the face box, eye centres and gaze arrows. The Screen Point of Gaze card manages calibration and draws the dot within Iride, including fullscreen mode. Technical data remains available in a collapsible section and through JSON streams. The dot cannot overlay other desktop applications.
 
-Sono accettati JSON con `cx`, `cy`, `screen_w`, `screen_h`: 6 coefficienti (quadratico) o 10 (cubico), nell'ordine `[1,yaw,pitch,yaw²,yaw·pitch,pitch²,yaw³,yaw²·pitch,yaw·pitch²,pitch³]`. Per trasferire una propria calibrazione pickle fidata della GUI:
+### Compatibility with existing calibrations
+
+Accepted JSON files contain `cx`, `cy`, `screen_w` and `screen_h`: six coefficients for a quadratic fit or ten for a cubic fit, ordered as `[1,yaw,pitch,yaw²,yaw·pitch,pitch²,yaw³,yaw²·pitch,yaw·pitch²,pitch³]`. To transfer a trusted calibration pickle from the GUI:
 
 ```python
 import pickle, json
@@ -63,29 +65,29 @@ with open('screen-calibration.json', 'w') as f:
                for k in ('cx','cy','screen_w','screen_h')}, f)
 ```
 
-Non usare pickle ricevuti da terzi. Una calibrazione desktop importata mantiene il riferimento/dimensioni originali: non applicarla all'area del browser senza verificarne la corrispondenza.
+Do not load untrusted pickle files. An imported desktop calibration retains its original reference and dimensions: verify that they match before applying it to the browser area.
 
-## Contratti dei dati
+## Data contracts
 
-Direzione (`GazeDirection`, TEXT):
+Direction (`GazeDirection`, TEXT):
 
 ```json
 {"schema":"gaze-direction.v1","status":"ok","yaw_rad":0.2,"pitch_rad":-0.1,"yaw_deg":11.459,"pitch_deg":-5.730,"direction_xyz":[0.197677,0.099833,-0.975170],"coordinate_space":"camera","bbox_xyxy_px":[100,80,300,320],"confidence":null,"source_ts_us":1792762000000000,"dropped_frames":12}
 ```
 
-Vettore: `[sin(yaw)·cos(pitch), -sin(pitch), -cos(yaw)·cos(pitch)]`, stessa convenzione del modello addestrato. Non inventiamo una probabilità: è una regressione, non un classificatore.
+Vector: `[sin(yaw)·cos(pitch), -sin(pitch), -cos(yaw)·cos(pitch)]`, using the trained model’s convention. No probability is fabricated: this is a regression model rather than a classifier.
 
-Punto sullo schermo (`ScreenPoint`, TEXT):
+Screen point (`ScreenPoint`, TEXT):
 
 ```json
 {"schema":"screen-point-of-gaze.v1","coordinate_space":"screen_pixels","source_ts_us":1792762000000000,"status":"ok","screen_xy_px":[520,290],"screen_size_px":[1000,600]}
 ```
 
-Entrambi mantengono il timestamp della cattura. Il primo fa inferenza su thread ML con un solo frame in elaborazione; scarta i frame eccedenti e il frame che ha avviato il caricamento dei pesi. Il secondo rifiuta timestamp ripetuti, fuori ordine o troppo vecchi (`maxSampleAgeSecs`, default 2 s), valori non finiti e formati incompatibili.
+Both outputs preserve the capture timestamp. The first node performs inference on an ML thread with one frame in flight; it drops excess frames and the frame that triggered weight loading. The second rejects repeated, out-of-order or stale timestamps (`maxSampleAgeSecs`, default 2 s), nonfinite values and incompatible formats.
 
-Gli stati `no_face`, `model_ready`, `model_unavailable`, `error`, `input_disconnected`, `stale_input`, `invalid_input` o `uncalibrated` non contengono coordinate utilizzabili. Non ripetere l'ultimo punto in un consumer quando il flusso si interrompe: anche il consumer deve verificare il timestamp.
+The statuses `no_face`, `model_ready`, `model_unavailable`, `error`, `input_disconnected`, `stale_input`, `invalid_input` and `uncalibrated` do not carry usable coordinates. Consumers must not repeat the last point after the stream stops; they must check freshness themselves.
 
-## Verifiche
+## Verification
 
 ```bash
 python -m pytest tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py tests/dyn/wrk/test_mldevice.py -q
@@ -94,19 +96,16 @@ python tools/verify_eyegaze_iride.py --fixture /path/to/face.png \
   --checkpoint /path/to/model.joblib --hub-dir /path/to/dinov2
 ```
 
-Il test d'integrazione avvia servizi isolati e un video di prova; controlla la catena `Iride WS → uinode → sysinit → telecamera → direzione → proiezione → Iride WS`, i timestamp, lo stato non calibrato, caricamento/cancellazione della calibrazione e la corrispondenza numerica dei pixel agli angoli originali. Arresta la pipeline e attende IDLE. Non usa la webcam né modifica le pipeline esistenti. La calibrazione numerica del test è sintetica: verifica il software, non la precisione di un soggetto reale.
+The integration test starts isolated services and a test video. It checks the chain `Iride WS → uinode → sysinit → camera → direction → projection → Iride WS`, timestamps, uncalibrated status, calibration loading/clearing and numerical agreement between pixels and the original angles. It then stops the pipeline and waits for IDLE. It does not use a physical webcam or modify existing pipelines. The numerical calibration is synthetic: it validates the software, not a real subject’s pointing accuracy.
 
-Le prove locali precedenti hanno verificato anche il trasporto attraverso uinode
-e sysinit, con video di prova e calibrazione sintetica. Ripetere il test di
-integrazione sull’apparato di destinazione; non equivale a validare l’accuratezza
-su persone reali.
+Earlier local tests also verified transport through uinode and sysinit using a test video and synthetic calibration. Repeat the integration test on the target device; it does not replace accuracy validation with real people.
 
-## Validazione e revisione ancora necessarie
+## Remaining validation and review
 
-Il 3,24° del checkpoint è l'errore di validazione **per frame** dichiarato nel repository di training, non una misura indipendente su soggetti nuovi o in pixel sul monitor corrente. Il residuo del fit di calibrazione non è un test su punti nuovi. Restano la verifica del puntamento con persone reali e target non usati nel fit, e la misura della latenza sull'apparato finale.
+The checkpoint’s 3.24° figure is the **frame-level** validation error reported by the training repository, not an independent measurement on unseen subjects or in pixels on the current monitor. The calibration fit residual is not a test on new targets. Pointing accuracy still needs to be checked with real people and targets excluded from fitting, and latency needs to be measured on the final device.
 
-Con Daniele: revisione dei contratti e integrazione nel runtime aziendale; verificare il keep-alive WebSocket durante l'avvio delle connessioni Flow, che ha richiesto una riconnessione in alcune prove precedenti. Con Sergio: obiettivo applicativo, hardware, inquadratura e requisiti di accuratezza. Nessun messaggio è stato inviato loro.
+Review with Daniele: contracts and integration into the company runtime, including WebSocket keep-alive while Flow connections start; some earlier tests required a reconnection. Review with Sergio: application goals, hardware, framing and accuracy requirements. No messages have been sent to either person.
 
-I repository `eye-gaze` (training) e `eyegaze-inference` (demo desktop e integrazione N2uCore) usano lo stesso modello. I nuovi due nodi dividono invece **due fasi della medesima inferenza**. `StressGazeInference`, Tobii e BioNormWear riguardano acquisizione strumentale o stima fisiologica: non sono questa coppia di nodi.
+The `eye-gaze` training repository and the `eyegaze-inference` desktop demo/integration repository use the same model. The two new nodes split **two stages of the same inference pipeline**. `StressGazeInference`, Tobii and BioNormWear concern instrumented acquisition or physiological estimation; they are separate from this pair of nodes.
 
-Il check **Mostra punto nella pagina** appartiene alla sessione della pipeline. Chiudere, nascondere o ridurre la card Screen Point of Gaze lascia attivi pallino e sottoscrizione se il check è selezionato. Riaprire la card ripristina la selezione; togliere il check nasconde il pallino. Fermare la pipeline elimina la sessione. Dati non recenti, volto assente, disconnessione o geometria non valida nascondono temporaneamente il punto senza cambiare la preferenza. Dopo un cambio di geometria occorre ricalibrare.
+The **Show point on page** checkbox belongs to the pipeline session. Closing, hiding or minimizing the Screen Point of Gaze card leaves the dot and subscription active when the checkbox is selected. Reopening the card restores the selection; unchecking it hides the dot. Stopping the pipeline clears the session. Stale data, a missing face, disconnection or invalid geometry temporarily hides the dot without changing the preference. Geometry changes require recalibration.

@@ -1,33 +1,35 @@
-# EyeGaze — Pipeline Completa
+# EyeGaze — Complete Pipeline
 
-Documento tecnico di riferimento. Descrive il sistema **GazeDINO** dal modello al training al dataset, con schemi visuali e dati essenziali.
+Technical reference for the **GazeDINO** system, covering the model, training and dataset with diagrams and key figures.
 
 ---
 
-## Indice
+## Contents
 
-- [Introduzione](#introduzione)
-- [1. Architettura del modello](#1-architettura-del-modello)
+- [Introduction](#introduction)
+- [1. Model architecture](#1-model-architecture)
 - [2. Dataset — GazeGene](#2-dataset--gazegene)
-- [3. Pipeline di training](#3-pipeline-di-training)
-- [4. Risultati](#4-risultati)
+- [3. Training pipeline](#3-training-pipeline)
+- [4. Results](#4-results)
 
 ---
 
-## Introduzione
+## Introduction
 
-Il sistema stima la direzione dello sguardo `(yaw, pitch)` da una singola immagine RGB del volto. È composto da due moduli:
+The system estimates gaze direction `(yaw, pitch)` from a single RGB face image. It consists of two modules:
 
-- un **backbone DINOv2 ViT-B/14** (~86 M parametri) pre-addestrato self-supervised da Meta AI su 142 M immagini, scaricato già pronto e usato come estrattore di feature
-- una **head MLP** (~0.5 M parametri) che noi abbiamo addestrato per tradurre le feature DINOv2 in `(yaw, pitch)`
+- a **DINOv2 ViT-B/14 backbone** (~86 M parameters), pretrained by Meta AI using self-supervision on 142 M images, downloaded and used as a feature extractor
+- an **MLP head** (~0.5 M parameters) trained to map DINOv2 features to `(yaw, pitch)`
 
-Il training è stato fatto sul dataset **GazeGene** (50 soggetti, 9 camere, ~90 K campioni) in due fasi: warm-up della head con backbone congelato, poi full fine-tune con learning rate molto basso. Il modello migliore raggiunge **3.24° di errore angolare medio** sul validation set.
+Training used the **GazeGene** dataset (50 subjects, 9 cameras, ~90 K samples) in two stages: head warm-up with a frozen backbone, followed by full fine-tuning at a very low learning rate. The best model reaches **3.24° mean angular error** on the validation set.
 
-Questo repo contiene **solo l'inferenza**: si carica il checkpoint, si fa la GUI con webcam o video. Il training avviene nel repo separato [eye-gaze](https://github.com/emanuelediluzio/eye-gaze).
+This repository contains **inference code**: the desktop GUI accepts a webcam or video, and the N2uCore integration provides two Iride nodes. Training takes place in the separate [eye-gaze](https://github.com/emanuelediluzio/eye-gaze) repository.
+
+The checkpoint diagram below describes the training format. The minimal inference joblib excludes optimizer state; see the [integration guide](integrations/n2ucore/README.md) for downloads and deployment.
 
 ---
 
-## 1. Architettura del modello
+## 1. Model architecture
 
 ```
                       ┌─────────────────────────────────────┐
@@ -59,13 +61,13 @@ Questo repo contiene **solo l'inferenza**: si carica il checkpoint, si fa la GUI
    ║   │     └─ LayerNorm + Residual                                │   ║
    ║   └────────────────────────────────────────────────────────────┘   ║
    ║                                │                                   ║
-   ║          (estrai SOLO il CLS token, scarta i 256 patch token)      ║
+   ║          (extract ONLY the CLS token; discard the 256 patch tokens)║
    ║                                │                                   ║
    ║                                ▼                                   ║
    ║                       CLS token: (B, 768)                          ║
    ║                                                                    ║
-   ║              86 M parametri · pre-trained self-supervised          ║
-   ║              (Meta AI, su 142 M immagini, 0 label)                 ║
+   ║              86 M parameters · self-supervised pretraining         ║
+   ║              (Meta AI, on 142 M images, 0 labels)                  ║
    ╚════════════════════════════════════════════════════════════════════╝
                                         │
                                   (B, 768)
@@ -95,7 +97,7 @@ Questo repo contiene **solo l'inferenza**: si carica il checkpoint, si fa la GUI
    ║       │  Linear(128 → 2)                 │                         ║
    ║       └─────────────────┬────────────────┘                         ║
    ║                                                                    ║
-   ║          ~ 0.5 M parametri · init Xavier uniform · bias = 0        ║
+   ║          ~ 0.5 M parameters · Xavier uniform init · bias = 0       ║
    ╚════════════════════════════════════════════════════════════════════╝
                                         │
                                   (B, 2)
@@ -103,46 +105,46 @@ Questo repo contiene **solo l'inferenza**: si carica il checkpoint, si fa la GUI
                                         ▼
                            ┌────────────────────────┐
                            │     OUTPUT             │
-                           │  (yaw, pitch) radianti │
+                           │  (yaw, pitch) radians  │
                            └────────────────────────┘
 
-                       TOTALE: ~ 87 M parametri
+                       TOTAL: ~ 87 M parameters
 ```
 
-### Conteggio parametri
+### Parameter counts
 
-| Componente | Parametri |
+| Component | Parameters |
 |------------|----------:|
 | Backbone DINOv2 ViT-B/14 | 86 580 480 |
 | Head MLP (768→512→128→2) | 461 186 |
-| **Totale** | **87 041 666** |
+| **Total** | **87 041 666** |
 
 ### Output
 
-- `yaw` ∈ ℝ — angolo orizzontale (positivo = sguardo a destra)
-- `pitch` ∈ ℝ — angolo verticale (positivo = sguardo verso l'alto)
-- entrambi in **radianti** (conversione in gradi solo per display)
+- `yaw` ∈ ℝ — horizontal angle (positive = looking right)
+- `pitch` ∈ ℝ — vertical angle (positive = looking up)
+- both in **radians** (converted to degrees for display only)
 
 ---
 
 ## 2. Dataset — GazeGene
 
-**Fonte:** [HuggingFace `vigil1917/GazeGene`](https://huggingface.co/datasets/vigil1917/GazeGene), ~27 GB. Pubblicato sotto licenza permissiva.
+**Source:** [HuggingFace `vigil1917/GazeGene`](https://huggingface.co/datasets/vigil1917/GazeGene), ~27 GB. Published under a permissive license.
 
-### Composizione
+### Composition
 
 | | |
 |---|---|
-| Soggetti | 56 |
-| Camere per soggetto | 9 (angolazioni diverse) |
-| Combinazioni totali | 56 × 9 = 504 |
-| Frame per camera | fino a 200 (configurabile) |
-| Run 3 (best model) | 50 soggetti × 9 × 200 = **90 000 campioni** |
+| Subjects | 56 |
+| Cameras per subject | 9 (different viewing angles) |
+| Total combinations | 56 × 9 = 504 |
+| Frames per camera | up to 200 (configurable) |
+| Run 3 (best model) | 50 subjects × 9 × 200 = **90,000 samples** |
 | Split train / val | 80 / 20 frame-level (seed 42) |
-| Range yaw osservato | −134° ↔ +124° |
-| Range pitch osservato | −87° ↔ +77° |
+| Observed yaw range | −134° ↔ +124° |
+| Observed pitch range | −87° ↔ +77° |
 
-### Struttura su disco
+### Directory layout
 
 ```
 gazegene_data/GazeGene_FaceCrops/
@@ -152,7 +154,7 @@ gazegene_data/GazeGene_FaceCrops/
 │   │   ├── camera1/   …
 │   │   └── camera8/
 │   └── labels/
-│       ├── gaze_label_camera0.pkl    ← gaze_C: (N, 3) vettori 3D unitari
+│       ├── gaze_label_camera0.pkl    ← gaze_C: (N, 3) unit 3D vectors
 │       ├── gaze_label_camera1.pkl
 │       └── …
 ├── subject2/
@@ -160,34 +162,34 @@ gazegene_data/GazeGene_FaceCrops/
 └── subject56/
 ```
 
-### Conversione label 3D → angoli
+### Converting 3D labels to angles
 
-Il pickle contiene `gaze_C` come array `(N, 3)` di vettori direzione 3D. Conversione (`data/gazegene_loader.py`):
+The pickle stores `gaze_C` as an `(N, 3)` array of 3D direction vectors. Conversion in `data/gazegene_loader.py`:
 
 ```python
-# convenzione: x=destra, y=basso, z=avanti
+# convention: x=right, y=down, z=forward
 yaw   = arctan2(x, -z)
 pitch = arctan2(-y, sqrt(x² + z²))
 ```
 
-### Augmentation (solo train)
+### Augmentation (training only)
 
-| Trasformazione | Probabilità | Note |
+| Transformation | Probability | Notes |
 |----------------|------------:|------|
-| Horizontal flip + yaw mirror | 0.5 | `label[0] = -label[0]` (critico) |
+| Horizontal flip + yaw mirror | 0.5 | `label[0] = -label[0]` (critical) |
 | ColorJitter | 0.7 | brightness 0.3, contrast 0.3, saturation 0.2, hue 0.05 |
 | GaussianBlur | 0.3 | kernel 3, sigma 0.1–1.5 |
 | Gaussian noise | 0.3 | σ = 0.02 |
 
-Le immagini vengono caricate **on-demand** da disco con `cv2.imread` (lazy loading) per non saturare la RAM.
+Images are loaded **on demand** from disk using `cv2.imread` (lazy loading) to avoid exhausting RAM.
 
 ---
 
-## 3. Pipeline di training
+## 3. Training pipeline
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                              PREPARAZIONE                               │
+│                              PREPARATION                                │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  GazeGene HuggingFace (~27 GB)                                          │
@@ -202,16 +204,16 @@ Le immagini vengono caricate **on-demand** da disco con `cv2.imread` (lazy loadi
 │         │                                                               │
 │         ▼                                                               │
 │  data/gazegene_loader.py · load_gazegene()                              │
-│    ├─ legge i .pkl (vettori 3D)                                         │
-│    ├─ converti 3D → (yaw, pitch) rad: arctan2(...)                      │
+│    ├─ read .pkl files (3D vectors)                                      │
+│    ├─ convert 3D → (yaw, pitch) radians: arctan2(...)                   │
 │    ├─ split frame-level 80/20 (seed=42)                                 │
-│    └─ ritorna (paths_train, paths_val, y_train, y_val)                  │
+│    └─ return (paths_train, paths_val, y_train, y_val)                   │
 │         │                                                               │
 │         ▼                                                               │
 │  data/gaze_dataset.py · LazyGazeDataset                                 │
-│    ├─ legge immagini on-demand (cv2.imread)                             │
+│    ├─ read images on demand (cv2.imread)                                │
 │    ├─ resize 224 + normalize ImageNet                                   │
-│    └─ augmentation (solo train): hflip+yaw mirror, jitter, blur, noise  │
+│    └─ augmentation (training only): hflip+yaw mirror, jitter, blur, noise│
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -237,10 +239,10 @@ Le immagini vengono caricate **on-demand** da disco con `cv2.imread` (lazy loadi
                                     │
                                     ▼
 ╔═════════════════════════════════════════════════════════════════════════╗
-║                  PHASE 1 · HEAD WARM-UP · 10 epoche                     ║
+║                  PHASE 1 · HEAD WARM-UP · 10 epochs                     ║
 ╠═════════════════════════════════════════════════════════════════════════╣
 ║                                                                         ║
-║  backbone:  ❄ FROZEN  (pesi DINOv2 intatti)                             ║
+║  backbone:  ❄ FROZEN  (unchanged DINOv2 weights)                        ║
 ║  head:      🟢 trainable  (~ 0.5 M params)                              ║
 ║                                                                         ║
 ║  optimizer  AdamW(head.parameters(), lr=1e-3, weight_decay=1e-4)        ║
@@ -248,7 +250,7 @@ Le immagini vengono caricate **on-demand** da disco con `cv2.imread` (lazy loadi
 ║                                                                         ║
 ║          LR:   1e-3  ─────────cosine─────────►  1e-5                    ║
 ║                                                                         ║
-║  per ogni epoca:                                                        ║
+║  for each epoch:                                                        ║
 ║    ┌─────────────────────────────────────────────────────────────┐      ║
 ║    │ for batch in train_loader:                                  │      ║
 ║    │   pred = model(imgs)                                        │      ║
@@ -256,21 +258,21 @@ Le immagini vengono caricate **on-demand** da disco con `cv2.imread` (lazy loadi
 ║    │   loss.backward()                                           │      ║
 ║    │   clip_grad_norm_(1.0)                                      │      ║
 ║    │   optimizer.step()                                          │      ║
-║    │ # validazione → val_err in gradi                            │      ║
+║    │ # validation → val_err in degrees                            │     ║
 ║    │ if val_err < best: save_checkpoint(best.pt)                 │      ║
 ║    └─────────────────────────────────────────────────────────────┘      ║
 ║                                                                         ║
-║  output Run 1 fine fase 1: ~62.5° (head ancora "fredda" ma stabile)     ║
+║  Run 1, end of phase 1: ~62.5° (head still unadapted but stable)        ║
 ╚═════════════════════════════════════════════════════════════════════════╝
                                     │
                               .unfreeze_backbone()
                                     │
                                     ▼
 ╔═════════════════════════════════════════════════════════════════════════╗
-║              PHASE 2 · FULL FINE-TUNE · 50 epoche                       ║
+║              PHASE 2 · FULL FINE-TUNE · 50 epochs                       ║
 ╠═════════════════════════════════════════════════════════════════════════╣
 ║                                                                         ║
-║  backbone:  🟢 trainable  (86 M params, gradienti attivi)               ║
+║  backbone:  🟢 trainable  (86 M params, gradients enabled)              ║
 ║  head:      🟢 trainable                                                ║
 ║                                                                         ║
 ║  optimizer  AdamW(model.parameters(), lr=5e-6, weight_decay=1e-4)       ║
@@ -279,34 +281,34 @@ Le immagini vengono caricate **on-demand** da disco con `cv2.imread` (lazy loadi
 ║          LR:   5e-6  ─────────cosine─────────►  5e-8                    ║
 ║                                                                         ║
 ║          ↑                                                              ║
-║          200× più piccolo della Phase 1 — backbone già "ottimo",        ║
-║          basta un nudge per non distruggere DINOv2                      ║
+║          200× lower than Phase 1 — preserve the pretrained backbone;    ║
+║          only a small adjustment is needed to fine-tune DINOv2          ║
 ║                                                                         ║
-║  early stopping: patience=12 epoche                                     ║
+║  early stopping: patience=12 epochs                                     ║
 ║                                                                         ║
 ║  Run 1 (10 subj): best val 4.44° @ ep 47                                ║
-║  Run 2 (50 subj): interrotta a 43/50                                    ║
-║  Run 3 (50 subj, --resume da Run 2): best val 3.24° @ ep 49 ✅          ║
+║  Run 2 (50 subj): interrupted at 43/50                                  ║
+║  Run 3 (50 subj, --resume from Run 2): best val 3.24° @ ep 49 ✅        ║
 ║                                                                         ║
 ╚═════════════════════════════════════════════════════════════════════════╝
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                              LOSS & METRICA                             │
+│                              LOSS & METRIC                              │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  angular_loss(pred, target)                                             │
 │                                                                         │
-│      converti (yaw, pitch) → vettore 3D unitario                        │
+│      convert (yaw, pitch) → unit 3D vector                              │
 │      v = [sin(yaw)·cos(pitch), -sin(pitch), -cos(yaw)·cos(pitch)]       │
 │                                                                         │
 │      cos_sim = (v_pred · v_true).clamp(-1+ε, 1-ε)                       │
-│      loss    = acos(cos_sim).mean()      ← in radianti                  │
+│      loss    = acos(cos_sim).mean()      ← in radians                   │
 │                                                                         │
-│      val_err_deg = rad2deg(loss)         ← per logging                  │
+│      val_err_deg = rad2deg(loss)         ← for logging                  │
 │                                                                         │
-│  Geometricamente corretta: misura l'angolo reale fra i vettori 3D       │
-│  sulla sfera unitaria, non l'errore euclideo nel piano (yaw, pitch).    │
+│  Geometrically correct: measures the angle between 3D vectors           │
+│  on the unit sphere, not Euclidean error in the (yaw, pitch) plane.     │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -329,15 +331,15 @@ Le immagini vengono caricate **on-demand** da disco con `cv2.imread` (lazy loadi
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Cheat sheet iperparametri
+### Hyperparameter cheat sheet
 
 | | Phase 1 | Phase 2 |
 |---|--------:|--------:|
-| Epoche | 10 | 50 |
+| Epochs | 10 | 50 |
 | Backbone | ❄ frozen | 🟢 trainable |
 | Trainable params | 0.5 M | 87 M |
-| LR iniziale | `1e-3` | `5e-6` |
-| LR finale | `1e-5` | `5e-8` |
+| Initial LR | `1e-3` | `5e-6` |
+| Final LR | `1e-5` | `5e-8` |
 | Optimizer | AdamW | AdamW |
 | Weight decay | `1e-4` | `1e-4` |
 | Scheduler | CosineAnnealingLR | CosineAnnealingLR |
@@ -345,31 +347,31 @@ Le immagini vengono caricate **on-demand** da disco con `cv2.imread` (lazy loadi
 | Early stopping | patience 12 | patience 12 |
 | Batch size | 32 | 32 |
 | Loss | angular_loss | angular_loss |
-| Augmentation | sì (solo train) | sì (solo train) |
+| Augmentation | yes (training only) | yes (training only) |
 
 ### Hardware
 
-Tutti i run sono stati eseguiti su **Apple Silicon (MPS backend)**. Tempo full Run 3: ~5 giorni su M1.
+All runs used **Apple Silicon (MPS backend)**. Full Run 3 duration: approximately five days on M1.
 
 ---
 
-## 4. Risultati
+## 4. Results
 
-| Run | Data | Soggetti | Phase | Best Val Error | Note |
+| Run | Date | Subjects | Phase | Best Val Error | Notes |
 |-----|------|---------:|-------|---------------:|------|
 | Run 1 | 2026-03-14 | 10 | 1 + 2 | **4.44°** @ ep 47 | from scratch |
-| Run 2 | 2026-04-11 | 50 | 2 only | ~3.94° | interrotto a 43/50 |
-| **Run 3** | **2026-04-16** | **50** | 2 only (resume da Run 2) | **3.24°** @ ep 49 | **best** |
+| Run 2 | 2026-04-11 | 50 | 2 only | ~3.94° | interrupted at 43/50 |
+| **Run 3** | **2026-04-16** | **50** | 2 only (resumed from Run 2) | **3.24°** @ ep 49 | **best** |
 
-**Improvement Run 1 → Run 3:** −1.20° (driver: 5× più dati + resume iterativo).
+**Improvement Run 1 → Run 3:** −1.20° (driven by 5× more data and iterative resumed training).
 
-I checkpoint sono pubblicati su [Releases v1.0-weights](https://github.com/emanuelediluzio/eye-gaze/releases/tag/v1.0-weights):
+Checkpoints are published in [Releases v1.0-weights](https://github.com/emanuelediluzio/eye-gaze/releases/tag/v1.0-weights):
 - `best_run3_3.24deg.pt` — best (Run 3)
 - `best_run1_4.44deg.pt` — baseline (Run 1)
 
 ---
 
-## Riferimenti
+## References
 
 - DINOv2 — Oquab et al., 2023 — [paper](https://arxiv.org/abs/2304.07193) · [repo](https://github.com/facebookresearch/dinov2) · Apache 2.0
 - GazeGene Dataset — [HuggingFace](https://huggingface.co/datasets/vigil1917/GazeGene)
