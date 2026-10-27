@@ -85,7 +85,7 @@ The **Show point on page** checkbox belongs to the pipeline session: closing, hi
 
 **Load/Save calibration** are under Advanced options. The calibration JSON contains coefficients and calibrated area dimensions; it is separate from the model’s joblib. Cancelling a new calibration preserves the previous fit. The dot is drawn inside the Iride page and cannot remain above other applications or after the browser closes.
 
-Both cards reuse Iride’s shared command buttons, form controls, card palette and typography. Card colours follow the framework in both light and dark canvas themes. The layout adapts to the card width, with direction metrics moving below the video in narrow cards. No separate button theme is bundled.
+Both cards reuse Iride’s shared command buttons (`command-run`, also used by TextInput, TextViewer and Swarm), form controls and card palette. The base font is inherited from Iride’s user preferences; internal headings use the standard card-title size. Larger numeric direction readings are reserved for the live measurements. Card colours follow the framework in both light and dark canvas themes. The layout adapts to the card width, with direction metrics moving below the video in narrow cards. No separate button theme is bundled.
 
 Control names in this guide describe the corresponding panel actions in English. This documentation update does not change the installed UI language.
 
