@@ -4,7 +4,7 @@ import joblib
 import numpy as np
 import pytest
 import torch
-from N2uCore.inference.gazeartifact import export_inference, load_model_state, validate_artifact
+from N2uCore.inference.gazeartifact import exportInference, loadModelState, validateArtifact
 
 
 def checkpoint(tmp_path):
@@ -18,12 +18,12 @@ def checkpoint(tmp_path):
 
 def test_export_excludes_training_state_and_preserves_outputs_exactly(tmp_path):
     source = checkpoint(tmp_path); output = tmp_path/'model.joblib'
-    report = export_inference(source, output)
+    report = exportInference(source, output)
     assert report['all_weights_exact']
     assert report['artifact_bytes'] < report['source_bytes']
     package = joblib.load(output)
     assert 'optimizer' not in package and 'epoch' not in package
-    original, restored = load_model_state(source), load_model_state(output)
+    original, restored = loadModelState(source), loadModelState(output)
     x = torch.tensor([[1.,2.,3.],[-1.,0.,2.]])
     for key in original: assert torch.equal(original[key], restored[key])
     assert torch.equal(x@original['head.weight'].T+original['head.bias'], x@restored['head.weight'].T+restored['head.bias'])
@@ -32,17 +32,17 @@ def test_export_excludes_training_state_and_preserves_outputs_exactly(tmp_path):
 
 def test_export_never_overwrites_an_existing_artifact(tmp_path):
     source = checkpoint(tmp_path); output = tmp_path/'model.joblib';output.write_bytes(b'keep')
-    with pytest.raises(FileExistsError): export_inference(source, output)
+    with pytest.raises(FileExistsError): exportInference(source, output)
     assert output.read_bytes() == b'keep'
 
 
 def test_incompatible_or_nonfinite_artifacts_are_rejected(tmp_path):
-    output = tmp_path/'model.joblib';export_inference(checkpoint(tmp_path), output)
+    output = tmp_path/'model.joblib';exportInference(checkpoint(tmp_path), output)
     original = joblib.load(output)
     for field,value in [('format','other'),('preprocessing',{}),('architecture',{}),('output',{}),('metadata',{})]:
         invalid=copy.deepcopy(original);invalid[field]=value
-        with pytest.raises(ValueError):validate_artifact(invalid)
+        with pytest.raises(ValueError):validateArtifact(invalid)
     invalid=copy.deepcopy(original);invalid['state_dict']['head.bias'][0]=np.nan
-    with pytest.raises(ValueError):validate_artifact(invalid)
+    with pytest.raises(ValueError):validateArtifact(invalid)
     invalid=copy.deepcopy(original);invalid['optimizer']={}
-    with pytest.raises(ValueError):validate_artifact(invalid)
+    with pytest.raises(ValueError):validateArtifact(invalid)

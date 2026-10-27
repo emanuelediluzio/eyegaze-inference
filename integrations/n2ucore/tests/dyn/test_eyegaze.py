@@ -1,6 +1,8 @@
 """Gaze regression semantics, bounded streaming and stale-result isolation."""
 import copy
 import json
+import subprocess
+import sys
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -9,9 +11,10 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from N2uCore.dyn.eyegaze import EyeGaze, EyeGazeTicker
-from N2uCore.inference.gazedino import GazeDinoEngine
-from N2uCore.inference.screengaze import screen_point
+from N2uCore.inference.gazedinoengine import GazeDinoEngine
+from N2uCore.inference.screengaze import screenPoint
 from N2uCore.validator import JsonValidator
+from N2uCore.dyn.uinode import PipelinePlan
 
 ROOT = Path(__file__).resolve().parents[2]
 KEY = 'N2uCore.dyn.eyegaze.GazeDirection'
@@ -22,9 +25,9 @@ def props():
 
 def engine():
     e=GazeDinoEngine('/unused')
-    e.mesh=MagicMock()
-    e.mesh.process.return_value=NS(multi_face_landmarks=[NS(landmark=[NS(x=.1,y=.2),NS(x=.9,y=.8)])])
-    e.predict_crop=MagicMock(return_value=np.array([.2,-.1]))
+    e._mesh=MagicMock()
+    e._mesh.process.return_value=NS(multi_face_landmarks=[NS(landmark=[NS(x=.1,y=.2),NS(x=.9,y=.8)])])
+    e._predictCrop=MagicMock(return_value=np.array([.2,-.1]))
     return e
 
 def test_face_angles_and_no_pupil_or_fake_confidence():
@@ -39,7 +42,7 @@ def test_face_angles_and_no_pupil_or_fake_confidence():
 
 def test_missing_face_clears_prediction_and_smoothing():
     e=engine();e.analyze(np.zeros((100,100,3),np.uint8))
-    e.mesh.process.return_value=NS(multi_face_landmarks=None)
+    e._mesh.process.return_value=NS(multi_face_landmarks=None)
     sample=e.analyze(np.zeros((100,100,3),np.uint8))
     assert sample['status']=='no_face' and sample['yaw_rad'] is None
     assert e._ema is None
@@ -51,9 +54,9 @@ def test_non_rgb_input_rejected():
 
 def test_screen_coordinates_are_clipped_pixels():
     c={'cx':[500,100,0,0,0,0],'cy':[300,0,100,0,0,0],'screen_w':1000,'screen_h':600}
-    assert screen_point(.2,-.1,c)==[520,290]
-    assert screen_point(100,100,c)==[999,599]
-    with pytest.raises(ValueError): screen_point(0,0,{**c,'cx':[1]})
+    assert screenPoint(.2,-.1,c)==[520,290]
+    assert screenPoint(100,100,c)==[999,599]
+    with pytest.raises(ValueError): screenPoint(0,0,{**c,'cx':[1]})
 
 def bare_node():
     node=EyeGaze(); node.isRunning=lambda:True
@@ -90,7 +93,7 @@ def test_capture_timestamp_is_preserved():
     assert args[2]==123456 and json.loads(args[1])['source_ts_us']==123456
 
 def test_ticker_reports_error_and_always_completes():
-    t=EyeGazeTicker(props());t._ensureLoaded=MagicMock(side_effect=RuntimeError('load failed'))
+    t=EyeGazeTicker();t._ensureLoaded=MagicMock(side_effect=RuntimeError('load failed'))
     t.estimate=MagicMock()
     t.infer(b'',{},123,7)
     pack=t.estimate.trigger.call_args.args[0][0]
@@ -99,13 +102,13 @@ def test_ticker_reports_error_and_always_completes():
     assert t._ensureLoaded.call_count==1 # backoff prevents repeated model loads
 
 def test_load_trigger_frame_is_not_used_for_a_stale_prediction():
-    t=EyeGazeTicker(props());t.engine=MagicMock();t.estimate=MagicMock()
+    t=EyeGazeTicker();t._engine=MagicMock();t.estimate=MagicMock()
     def load():
         t._loaded=True
         return True
     t._ensureLoaded=load
     t.infer(b'old frame',{},123,7)
-    t.engine.analyze.assert_not_called()
+    t._engine.analyze.assert_not_called()
     pack=t.estimate.trigger.call_args.args[0][0]
     assert pack['sample']['status']=='model_ready'
 
@@ -114,7 +117,6 @@ def test_schema_and_pipeline_contract():
     v=JsonValidator();v.setSchema(definitions[KEY]['PROPS_SCHEMA'])
     p=props();assert v.validate(p)
     assert definitions[KEY]['outputs']==[{'name':'GazeDirection','type':'TEXT'}]
-    from N2uCore.dyn.uinode import PipelinePlan
     doc=json.loads((ROOT/'examples/eyegaze/gazedino.iride.json').read_text())
     plan=PipelinePlan(definitions,['SysInit'])
     assert plan.build(doc),plan.error()
@@ -122,7 +124,7 @@ def test_schema_and_pipeline_contract():
 def test_display_metadata_contains_only_frame_size_and_two_iris_centers():
     e = engine()
     landmarks = [NS(x=.1, y=.2), NS(x=.9, y=.8)] + [NS(x=.5, y=.5) for _ in range(476)]
-    e.mesh.process.return_value = NS(multi_face_landmarks=[NS(landmark=landmarks)])
+    e._mesh.process.return_value = NS(multi_face_landmarks=[NS(landmark=landmarks)])
     sample = e.analyze(np.zeros((100, 200, 3), np.uint8))
     assert sample['image_size_px'] == [200, 100]
     assert sample['eyes_px'] == [[100, 50], [100, 50]]
@@ -133,4 +135,55 @@ def test_default_rate_accepts_fresh_frame_within_old_quarter_second_limit(monkey
     ticks=iter([10.,10.1]);monkeypatch.setattr('N2uCore.dyn.eyegaze.time.monotonic',lambda:next(ticks))
     n._onData(receiver(1));n._inFlight=False;n._onData(receiver(2))
     assert n._ticker.loop().invokeSlot.call_count==2
-    assert n._props['maxFps']==15
+    assert n._props == {}
+
+
+def test_head_roll_uses_pixel_aspect_ratio_and_does_not_change_gaze():
+    e = engine()
+    points = [NS(x=.5, y=.5) for _ in range(478)]
+    points[0], points[1] = NS(x=.1,y=.1), NS(x=.9,y=.9)
+    points[33], points[263] = NS(x=.3,y=.4), NS(x=.7,y=.6)
+    e._mesh.process.return_value = NS(multi_face_landmarks=[NS(landmark=points)])
+    sample = e.analyze(np.zeros((100,200,3),np.uint8))
+    assert sample['roll_rad'] == pytest.approx(np.arctan2(20,80))
+    assert sample['roll_deg'] == pytest.approx(np.degrees(np.arctan2(20,80)))
+    assert sample['roll_source'] == 'head_landmarks'
+    assert sample['yaw_rad'] == pytest.approx(.2)
+    assert sample['pitch_rad'] == pytest.approx(-.1)
+    points[33], points[263] = NS(x=.3,y=.6), NS(x=.7,y=.4)
+    assert e.analyze(np.zeros((100,200,3),np.uint8))['roll_rad'] < 0
+    e._mesh.process.return_value = NS(multi_face_landmarks=None)
+    missing = e.analyze(np.zeros((100,200,3),np.uint8))
+    assert missing['roll_rad'] is None and missing['roll_deg'] is None
+
+
+def test_degenerate_eye_axis_never_fabricates_a_head_roll():
+    e = engine()
+    points = [NS(x=.5,y=.5) for _ in range(478)]
+    points[0],points[1] = NS(x=.1,y=.2),NS(x=.9,y=.8)
+    e._mesh.process.return_value = NS(multi_face_landmarks=[NS(landmark=points)])
+    sample = e.analyze(np.zeros((100,100,3),np.uint8))
+    assert sample['status'] == 'ok' and sample['roll_rad'] is None
+
+
+def test_node_and_ticker_construction_do_not_load_weights_or_face_tracker(monkeypatch):
+    hubLoad = MagicMock()
+    faceMesh = MagicMock()
+    monkeypatch.setattr('N2uCore.inference.gazedinoengine.torch.hub.load',hubLoad)
+    monkeypatch.setattr('N2uCore.inference.gazedinoengine.mp.solutions.face_mesh.FaceMesh',faceMesh)
+    node = EyeGaze()
+    ticker = EyeGazeTicker()
+    assert node._ticker is None and not node._inFlight
+    assert ticker._engine is None and not ticker._loaded
+    hubLoad.assert_not_called()
+    faceMesh.assert_not_called()
+
+
+def test_missing_offline_source_never_attempts_hub_download(tmp_path,monkeypatch):
+    checkpoint = tmp_path/'model.joblib';checkpoint.write_bytes(b'not loaded without source')
+    hubLoad = MagicMock()
+    monkeypatch.setattr('N2uCore.inference.gazedinoengine.torch.hub.get_dir',lambda:str(tmp_path))
+    monkeypatch.setattr('N2uCore.inference.gazedinoengine.torch.hub.load',hubLoad)
+    with pytest.raises(FileNotFoundError,match='local Torch Hub cache'):
+        GazeDinoEngine(checkpoint).load()
+    hubLoad.assert_not_called()

@@ -107,3 +107,12 @@ test('cancelling validation saves no partial report and never changes calibratio
  assert.equal(descendants(h.root,'td').length,0);assert.deepEqual(calls,['getCalibration']);
  }finally{globalThis.setTimeout=oldTimeout;h.close();}
 });
+
+test('screen card has no saved-calibration file controls',()=>{
+ const h=setup(async()=>({status:true,val:null}));
+ try {
+  assert.equal(descendants(h.root,'input').filter(input=>input.type==='file').length,0);
+  const labels=descendants(h.root,'button').map(button=>button.textContent);
+  assert(!labels.includes('Carica calibrazione') && !labels.includes('Salva calibrazione'));
+ } finally {h.close();}
+});

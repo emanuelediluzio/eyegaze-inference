@@ -1,7 +1,9 @@
+import copy
 import json
 import time
-import copy
-from pathlib import Path
+
+import psutil
+import torch
 
 from N2uCore.dyn.wrk.mldevice import MlDevice, MlTicker, MemoryProvider
 from N2uCore.dyn.wrk.input import WorkerFlowInput
@@ -9,86 +11,75 @@ from N2uCore.miniflow.channel import FlowChannelType
 from N2uCore.miniflow.proto import FlowEvent, FlowResource
 from N2uCore.signal import Signal, AttachMode
 from N2uCore.resman import ResourceManager
+from N2uCore.multimedia.imgdec import ImageDecoder
+from N2uCore.inference.gazedinoengine import GazeDinoEngine
 
 
 class GazeMemoryProvider(MemoryProvider):
-    def __init__(self, device):
-        self.device = device
-
     def available(self):
-        import torch
-        import psutil
-
-        if self.device.startswith("cuda") or (self.device == "auto" and torch.cuda.is_available()):
-            free, total = torch.cuda.mem_get_info(None if self.device == "auto" else self.device)
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
             return int(free), int(total)
         vm = psutil.virtual_memory()
         return int(vm.available), int(vm.total)
 
 
 class EyeGazeTicker(MlTicker):
-    def __init__(self, props):
-        super().__init__(GazeMemoryProvider(props["device"]), idleTimeoutSecs=props["idleTimeout"])
-        self.props = props
-        self.engine = None
+    def __init__(self):
+        super().__init__(GazeMemoryProvider())
+        self._engine = None
         self.estimate = Signal(self, "estimate")
-        self._retry_at = 0
+        self._retryAt = 0
         self._generation = None
 
     def _estimateFootprint(self):
         return 700 * 1024**2
 
     def _loadModel(self):
-        from N2uCore.inference.gazedino import GazeDinoEngine
-
-        path = self.props["checkpoint"]
-        if not Path(path).is_absolute():
-            path = ResourceManager().absolutePath(path)
-        self.engine = GazeDinoEngine(path, self.props["device"], self.props["hubDir"], self.props["emaAlpha"])
+        modelPath = ResourceManager().absolutePath("models/gazedino/model.joblib")
+        self._engine = GazeDinoEngine(modelPath)
         try:
-            self.engine.load()
+            self._engine.load()
         except Exception as exc:
-            self.engine.close()
-            self.engine = None
+            self._engine.close()
+            self._engine = None
             self.err("Cannot load GazeDINO: {}".format(exc))
             return False
         self._modelLabel = "GazeDINO ViT-B/14"
         return True
 
     def _unloadModel(self):
-        if self.engine is not None:
-            self.engine.close()
-        self.engine = None
+        if self._engine is not None:
+            self._engine.close()
+        self._engine = None
 
     def infer(self, data, props, ts, generation):
         outcome = {"schema": "gaze-direction.v1", "status": "error"}
-        was_loaded = self._loaded
+        wasLoaded = self._loaded
         try:
-            if time.monotonic() < self._retry_at:
+            if time.monotonic() < self._retryAt:
                 outcome["status"] = "model_unavailable"
             elif not self._ensureLoaded():
-                self._retry_at = time.monotonic() + 30
+                self._retryAt = time.monotonic() + 30
                 outcome["status"] = "model_unavailable"
-            elif not was_loaded:
+            elif not wasLoaded:
                 # Wait for a fresh frame after loading.
                 outcome["status"] = "model_ready"
             else:
-                from N2uCore.multimedia.imgdec import ImageDecoder
-
                 if generation != self._generation:
-                    self.engine.reset()
+                    self._engine.reset()
                     self._generation = generation
                 decoder = ImageDecoder()
                 if props.get("pxFmt") != "UINT8_T" or props.get("depth") != 3:
                     raise ValueError("Input must be visible RGB UINT8, depth 3")
                 if not decoder.setup(props["size"], 3, "UINT8_T", props["encoding"]["codec"]):
                     raise ValueError("Unsupported input codec")
-                outcome = self.engine.analyze(decoder.decode(data))
+                outcome = self._engine.analyze(decoder.decode(data))
         except Exception as exc:
             self.err("EyeGaze inference: {}".format(exc))
             outcome["error"] = str(exc)
             if not self._loaded:
-                self._retry_at = time.monotonic() + 30
+                self._retryAt = time.monotonic() + 30
         finally:
             self.estimate.trigger([{"sample": outcome, "ts": ts, "generation": generation}])
 
@@ -118,7 +109,7 @@ class GazeDirection(MlDevice):
         return EyeGazeTicker
 
     def _tickerArgs(self):
-        return {"props": dict(self._props)}
+        return {}
 
     def _onInit(self):
         channel = self.service().addChannel(
@@ -130,6 +121,8 @@ class GazeDirection(MlDevice):
                 "angleUnit": "radians",
                 "dependsOn": ["{}.{}".format(self._source["node"], self._source["channel"])],
                 "coordinateSpace": "camera",
+                "rollSource": "head_landmarks",
+                "rollConvention": "atan2(eye263.y-eye33.y, eye263.x-eye33.x) in image pixels; clockwise positive",
                 "vectorConvention": "[sin(yaw)*cos(pitch), -sin(pitch), -cos(yaw)*cos(pitch)]",
             },
         )
@@ -194,7 +187,7 @@ class GazeDirection(MlDevice):
             not self.isRunning()
             or self._ticker is None
             or self._inFlight
-            or now - self._lastDispatch < 1 / self._props["maxFps"]
+            or now - self._lastDispatch < 1 / 15.0
         ):
             self._dropped += 1
             return

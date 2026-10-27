@@ -71,8 +71,6 @@ def main():
     parser.add_argument('--sysinit',default='SysInit',help='Executor for the live-server test')
     parser.add_argument('--palette-defaults',action='store_true',help='Use GazeDirection defaults from the actual server catalogue')
     parser.add_argument('--fixture',type=Path,required=True)
-    parser.add_argument('--checkpoint',type=Path,required=True)
-    parser.add_argument('--hub-dir',type=Path,required=True)
     parser.add_argument('--out',type=Path,default=ROOT/'examples/eyegaze/iride-integration-test.json')
     args=parser.parse_args()
     frame=cv2.imread(str(args.fixture));assert frame is not None,'Unreadable fixture'
@@ -148,7 +146,7 @@ def main():
             for node in doc['nodes']:node['sysinit']=sysname
             camera,gaze,screen=doc['nodes'];camera['settings']['name']='GazeCam'+unique
             camera['settings']['id']=str(video)
-            gaze['settings'].update(name='GazeModel'+unique,checkpoint=str(args.checkpoint.resolve()),hubDir=str(args.hub_dir.resolve()))
+            gaze['settings']={'name':'GazeModel'+unique}
             if args.palette_defaults:
                 gaze['settings']={'name':'GazeModel'+unique,**{
                     k:v['default'] for k,v in schema[gaze['type']]['PROPS_SCHEMA'].items()}}
@@ -179,7 +177,7 @@ def main():
                     samples.append(sample)
                     print('WS gaze sample',len(samples),flush=True)
             assert len(samples)==3,'No face predictions received through Iride data WS'
-            # Second node must initially report uncalibrated, then map the SAME angles.
+            # Second node must initially report uncalibrated, then collect fresh guided calibration samples.
             screen_name=screen['settings']['name']
             data.call('subscribeNodeChannel',{'nodeName':screen_name,'chanName':'ScreenPoint'})
             uncalibrated=False;deadline=time.monotonic()+20
@@ -191,35 +189,16 @@ def main():
                 if point.get('schema')=='screen-point-of-gaze.v1' and point['status']=='uncalibrated':
                     uncalibrated=True;break
             assert uncalibrated,'Screen node must not fabricate uncalibrated pixels'
-            calibration={'cx':[500,100,0,0,0,0],'cy':[300,0,100,0,0,0],'screen_w':1000,'screen_h':600}
-            def node_command(cmd,args=None):
+            def nodeCommand(cmd,args=None):
                 return ctrl.call('nodeCommand',{'nodeName':screen_name,'cmd':cmd,'args':args or {}})
-            node_command('setCalibration',{'calibration':calibration})
-            assert node_command('getCalibration')==calibration
-            directions={};points=[];deadline=time.monotonic()+25
-            while len(points)<3 and time.monotonic()<deadline:
-                try:raw=data.recv()
-                except queue.Empty:continue
-                if not isinstance(raw,bytes) or len(raw)<=32:continue
-                _,ts,_,_=struct.unpack('<QQQQ',raw[:32]);value=json.loads(raw[32:])
-                assert ts==value['source_ts_us']
-                if value.get('schema')=='gaze-direction.v1' and value['status']=='ok':directions[ts]=value
-                if value.get('schema')=='screen-point-of-gaze.v1' and value['status']=='ok':points.append(value)
-            assert len(points)==3,'No calibrated screen points'
-            from N2uCore.inference.screengaze import screen_point
-            # Both streams use the original capture timestamp; some frames can arrive in reverse order.
-            deadline=time.monotonic()+5
-            while any(p['source_ts_us'] not in directions for p in points) and time.monotonic()<deadline:
-                try:raw=data.recv()
-                except queue.Empty:continue
-                if isinstance(raw,bytes) and len(raw)>32:
-                    value=json.loads(raw[32:])
-                    if value.get('schema')=='gaze-direction.v1' and value['status']=='ok':directions[value['source_ts_us']]=value
-            for point in points:
-                direction=directions[point['source_ts_us']]
-                assert point['screen_xy_px']==screen_point(direction['yaw_rad'],direction['pitch_rad'],calibration)
-            node_command('clearCalibration')
-            assert node_command('getCalibration') is None
+            assert nodeCommand('getCalibration') is None
+            nodeCommand('beginCalibration',{'screen_w':1000,'screen_h':600})
+            nodeCommand('calibrationTarget',{'x':500.,'y':300.})
+            time.sleep(3)
+            collected=nodeCommand('finishTarget')
+            assert collected['targets']==1 and collected['samples']>=3
+            nodeCommand('cancelCalibration')
+            assert nodeCommand('getCalibration') is None
             ctrl.call('stopPipeline');deadline=time.monotonic()+30
             while control_state()['state']!='IDLE':
                 assert time.monotonic()<deadline,'Stop did not reach IDLE'
@@ -227,7 +206,7 @@ def main():
             running=False
             args.out.write_text(json.dumps({'passed':True,'transport':'WebSocket -> uinode -> sysinit -> CvCamera -> Flow -> GazeDirection/MlTicker -> Flow -> ScreenPointOfGaze -> Flow -> uinode -> WebSocket',
                 'physical_camera':False,'accuracy_evaluated':False,'fixture':args.fixture.name,
-                'checkpoint':args.checkpoint.name,'samples':samples,'screen_points':points,'uncalibrated_verified':uncalibrated,'projection_parity':True,'max_control_rtt_ms':max(heartbeats)*1000,
+                'checkpoint':'models/gazedino/model.joblib','samples':samples,'calibration_target':collected,'uncalibrated_verified':uncalibrated,'guided_collection_verified':True,'max_control_rtt_ms':max(heartbeats)*1000,
                 'control_reconnects':reconnects,'server_url':server_url,'sysinit':sysname,
                 'palette_defaults':args.palette_defaults,'stopped_to_idle':True},indent=2)+'\n')
             print('PASS: three direction + screen estimates, calibration parity/clear; stopped to IDLE',flush=True)

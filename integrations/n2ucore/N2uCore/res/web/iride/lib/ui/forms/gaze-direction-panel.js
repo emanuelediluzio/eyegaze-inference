@@ -18,7 +18,7 @@ export class GazeDirectionPanel {
     }
     main.append(controls,el("p","gaze-hint","Guarda la webcam mantenendo il volto visibile. Le frecce rappresentano la direzione, non il punto sul monitor."));
     const side=el("aside","gaze-readings");side.append(el("h3","","Sguardo in tempo reale"));this.#stats=el("dl","gaze-metrics");side.append(this.#stats);
-    for(const label of ["Orizzontale · yaw","Verticale · pitch","Stime al secondo"]){const value=el("dd","","—");this.#metricValues.push(value);this.#stats.append(el("dt","",label),value);}
+    for(const label of ["Orizzontale · yaw","Verticale · pitch","Inclinazione testa · roll","Stime al secondo"]){const value=el("dd","","—");this.#metricValues.push(value);this.#stats.append(el("dt","",label),value);}
     const details=el("details","gaze-details");details.append(el("summary","","Dettagli tecnici"));this.#detailsBox=details;this.#details=el("pre");details.append(this.#details);details.addEventListener("toggle",()=>this.#showDetails());side.append(details);layout.append(main,side);this.#root.append(header,layout);container.replaceChildren(this.#root);
     this.#stream=new GazeStream(this.#o,"GazeDirection",s=>this.update(s),s=>this.#status.textContent=s);this.#metrics(null);
   }
@@ -49,7 +49,7 @@ export class GazeDirectionPanel {
   }
   #metrics(s) {
     const angle=v=>Number.isFinite(v)?v.toFixed(1)+"°":"—";
-    const values=[angle(s?.yaw_deg),angle(s?.pitch_deg),s?this.#rate.toFixed(1):"—"];
+    const values=[angle(s?.yaw_deg),angle(s?.pitch_deg),angle(s?.roll_deg),s?this.#rate.toFixed(1):"—"];
     values.forEach((value,i)=>{if(this.#metricValues[i].textContent!==value)this.#metricValues[i].textContent=value;});
   }
   #showDetails() { if(this.#detailsBox?.open && this.#sample)this.#details.textContent=JSON.stringify(this.#sample,null,2); }

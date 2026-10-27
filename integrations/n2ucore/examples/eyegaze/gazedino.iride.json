@@ -45,13 +45,7 @@
       "type": "N2uCore.dyn.eyegaze.GazeDirection",
       "sysinit": "SysInit",
       "settings": {
-        "name": "GazeDino",
-        "checkpoint": "models/gazedino/model.joblib",
-        "device": "auto",
-        "hubDir": "",
-        "maxFps": 15.0,
-        "emaAlpha": 0.25,
-        "idleTimeout": 600
+        "name": "GazeDino"
       },
       "x": 440,
       "y": 120
@@ -62,9 +56,7 @@
       "type": "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze",
       "sysinit": "SysInit",
       "settings": {
-        "name": "ScreenGaze",
-        "calibrationPath": "",
-        "maxSampleAgeSecs": 2.0
+        "name": "ScreenGaze"
       },
       "x": 800,
       "y": 120

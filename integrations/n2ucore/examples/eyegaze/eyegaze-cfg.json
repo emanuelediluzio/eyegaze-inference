@@ -2,14 +2,7 @@
   "module": "N2uCore.dyn.eyegaze",
   "class": "GazeDirection",
   "name": "GazeDino",
-  "props": {
-    "checkpoint": "models/gazedino/model.joblib",
-    "device": "auto",
-    "hubDir": "",
-    "maxFps": 15.0,
-    "emaAlpha": 0.25,
-    "idleTimeout": 600
-  },
+  "props": {},
   "network": {
     "ssl": {
       "enabled": false,

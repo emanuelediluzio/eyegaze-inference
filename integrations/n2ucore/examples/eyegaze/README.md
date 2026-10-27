@@ -9,7 +9,7 @@ GazeDirection.GazeDirection → ScreenPointOfGaze.GazeDirection
 
 | Node | Class | Input | Output |
 |---|---|---|---|
-| Gaze Direction | `N2uCore.dyn.eyegaze.GazeDirection` (`MlDevice`) | RGB face video | `GazeDirection`: yaw/pitch in radians and degrees, unit 3D vector, status and timestamp |
+| Gaze Direction | `N2uCore.dyn.eyegaze.GazeDirection` (`MlDevice`) | RGB face video | `GazeDirection`: model yaw/pitch, image-plane head roll, unit 3D gaze vector, status and timestamp |
 | Screen Point of Gaze | `N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze` (`SwDevice`) | Gaze direction | `ScreenPoint`: X/Y in pixels, calibrated screen dimensions and status |
 
 The model runs **only in the first node**. The second loads neither PyTorch nor MediaPipe and does not open a camera: it applies a lightweight polynomial transformation and manages calibration. Gaze Direction can run on its own. Screen Point of Gaze requires the first node’s output, following the `gaze-direction.v1` contract.
@@ -25,12 +25,9 @@ Webcam ID `0` selects the first camera on the computer executing the node;
 `1`, `2`, etc. select other cameras. Device ordering can differ between machines.
 Windows uses DirectShow and Linux uses V4L2; check camera permissions.
 
-The default checkpoint is `N2uCore/res/models/gazedino/model.joblib`
-in the target N2uCore checkout. `hubDir` can remain empty: the engine uses
-DINOv2 sources from the Torch cache, or downloads them from GitHub if missing.
-For offline use, prepare those sources and provide their local directory.
-`calibrationPath` is optional and belongs only to Screen Point of Gaze.
-Without calibration, that node publishes `uncalibrated` with `screen_xy_px: null`.
+The node always loads `N2uCore/res/models/gazedino/model.joblib` in the target framework. Device selection is automatic; inference is capped at 15 FPS. DINOv2 source must be provisioned in the local Torch Hub cache (`facebookresearch_dinov2_main/hubconf.py`); runtime never downloads missing source. The model and inference settings are fixed in code, not user parameters.
+
+Screen Point of Gaze always starts without calibration and publishes `uncalibrated` with `screen_xy_px: null`. Calibration belongs to the current node process; there is no calibration-path setting or file import/export.
 
 After installation, restart services using the device’s normal procedure and
 reload Iride without cache. Do not interrupt active pipelines.
@@ -41,7 +38,6 @@ Open the **Screen Point of Gaze** card while the pipeline is running:
 
 - **Calibration points** selects either a 16-point 4×4 grid or a 32-point 8×4 grid across the Iride browser area. Follow the targets while keeping your head still. Collection lasts 2.8 s per target and discards the first 0.98 s. The panel advances every 3 s.
 - The backend requires at least three fresh predictions per target, filters outliers and computes a cubic fit using at least ten targets and a full-rank matrix. The guided procedure collects all selected targets, with a maximum of 32. Missing faces or a degenerate fit cause the command to fail without replacing the previous calibration.
-- **Load calibration / Save calibration** transfers coefficients through `nodeCommand → uinode → Flow`, without direct access to a node or the BlackBox filesystem.
 - **Show point on page** enables the dot inside the Iride page after calibration.
 - **Try fullscreen** expands Iride across the monitor; calibrate after the viewport changes.
 - **Esc / Cancel**, window resizing, a hidden page or loss of the node cancels the procedure. Loss of the gaze-direction stream also cancels collection on the backend.
@@ -52,28 +48,19 @@ Guided targets use **CSS pixels within the Iride area**. Output coordinates use 
 
 The Gaze Direction card displays video, the face box, eye centres and gaze arrows. The Screen Point of Gaze card manages calibration and draws the dot within Iride, including fullscreen mode. Technical data remains available in a collapsible section and through JSON streams. The dot cannot overlay other desktop applications.
 
-### Compatibility with existing calibrations
+### Session-only calibration
 
-Accepted JSON files contain `cx`, `cy`, `screen_w` and `screen_h`: six coefficients for a quadratic fit or ten for a cubic fit, ordered as `[1,yaw,pitch,yaw²,yaw·pitch,pitch²,yaw³,yaw²·pitch,yaw·pitch²,pitch³]`. To transfer a trusted calibration pickle from the GUI:
-
-```python
-import pickle, json
-with open('calibration.pkl', 'rb') as f:
-    c = pickle.load(f)
-with open('screen-calibration.json', 'w') as f:
-    json.dump({k: c[k].tolist() if k in ('cx','cy') else c[k]
-               for k in ('cx','cy','screen_w','screen_h')}, f)
-```
-
-Do not load untrusted pickle files. An imported desktop calibration retains its original reference and dimensions: verify that they match before applying it to the browser area.
+The guided procedure fits coefficients in memory for the current process. Restarting the pipeline requires a new calibration. Closing or reopening a card keeps that same session and does not restart the node. Cancelling an incomplete replacement preserves the current session’s previous calibration.
 
 ## Data contracts
 
 Direction (`GazeDirection`, TEXT):
 
 ```json
-{"schema":"gaze-direction.v1","status":"ok","yaw_rad":0.2,"pitch_rad":-0.1,"yaw_deg":11.459,"pitch_deg":-5.730,"direction_xyz":[0.197677,0.099833,-0.975170],"coordinate_space":"camera","bbox_xyxy_px":[100,80,300,320],"confidence":null,"source_ts_us":1792762000000000,"dropped_frames":12}
+{"schema":"gaze-direction.v1","status":"ok","yaw_rad":0.2,"pitch_rad":-0.1,"yaw_deg":11.459,"pitch_deg":-5.730,"roll_rad":0.05,"roll_deg":2.865,"roll_source":"head_landmarks","direction_xyz":[0.197677,0.099833,-0.975170],"coordinate_space":"camera","bbox_xyxy_px":[100,80,300,320],"confidence":null,"source_ts_us":1792762000000000,"dropped_frames":12}
 ```
+
+Head roll is computed from MediaPipe Face Mesh landmarks 33 and 263 as `atan2(dy_pixels, dx_pixels)`, with clockwise-positive image coordinates. It is separate from the two learned GazeDINO outputs, and null if a valid eye axis is unavailable. No neural-network retraining is involved.
 
 Vector: `[sin(yaw)·cos(pitch), -sin(pitch), -cos(yaw)·cos(pitch)]`, using the trained model’s convention. No probability is fabricated: this is a regression model rather than a classifier.
 
@@ -83,7 +70,7 @@ Screen point (`ScreenPoint`, TEXT):
 {"schema":"screen-point-of-gaze.v1","coordinate_space":"screen_pixels","source_ts_us":1792762000000000,"status":"ok","screen_xy_px":[520,290],"screen_size_px":[1000,600]}
 ```
 
-Both outputs preserve the capture timestamp. The first node performs inference on an ML thread with one frame in flight; it drops excess frames and the frame that triggered weight loading. The second rejects repeated, out-of-order or stale timestamps (`maxSampleAgeSecs`, default 2 s), nonfinite values and incompatible formats.
+Both outputs preserve the capture timestamp. The first node performs inference on an ML thread with one frame in flight; it drops excess frames and the frame that triggered weight loading. The second rejects repeated, out-of-order or stale timestamps (fixed 2-second maximum age), nonfinite values and incompatible formats.
 
 The statuses `no_face`, `model_ready`, `model_unavailable`, `error`, `input_disconnected`, `stale_input`, `invalid_input` and `uncalibrated` do not carry usable coordinates. Consumers must not repeat the last point after the stream stops; they must check freshness themselves.
 
@@ -92,11 +79,10 @@ The statuses `no_face`, `model_ready`, `model_unavailable`, `error`, `input_disc
 ```bash
 python -m pytest tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py tests/dyn/wrk/test_mldevice.py -q
 node --test tests/web/screen-gaze-panel.test.mjs
-python tools/verify_eyegaze_iride.py --fixture /path/to/face.png \
-  --checkpoint /path/to/model.joblib --hub-dir /path/to/dinov2
+python tools/verify_eyegaze_iride.py --fixture /path/to/face.png
 ```
 
-The integration test starts isolated services and a test video. It checks the chain `Iride WS → uinode → sysinit → camera → direction → projection → Iride WS`, timestamps, uncalibrated status, calibration loading/clearing and numerical agreement between pixels and the original angles. It then stops the pipeline and waits for IDLE. It does not use a physical webcam or modify existing pipelines. The numerical calibration is synthetic: it validates the software, not a real subject’s pointing accuracy.
+The integration test starts isolated services and a test video. It checks the chain `Iride WS → uinode → sysinit → camera → direction → projection → Iride WS`, timestamps, uncalibrated status, fresh guided target collection and cancellation without importing calibration files. It then stops the pipeline and waits for IDLE. It does not use a physical webcam or modify existing pipelines. The replay image cannot establish pointing accuracy or fit a meaningful multi-target calibration. Python tests separately verify fitting and projection on synthetic data; real-subject calibration must still be tested interactively.
 
 Earlier local tests also verified transport through uinode and sysinit using a test video and synthetic calibration. Repeat the integration test on the target device; it does not replace accuracy validation with real people.
 

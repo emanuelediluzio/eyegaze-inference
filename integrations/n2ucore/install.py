@@ -40,15 +40,6 @@ def plan(target):
             else:
                 changes[rel] = source.read_bytes()
     edits = {
-        IRIDE + 'lib/model/node-schema.js': [
-            ('"fixedLength", "fixedlength", "step", "itemType", "exts"',
-             '"fixedLength", "fixedlength", "step", "itemType", "exts", "optional"')],
-        IRIDE + 'lib/model/schema-ui.js': [
-            ('static UI_KEYS = ["label", "visibility"];',
-             'static UI_KEYS = ["label", "visibility", "optional"];')],
-        IRIDE + 'lib/model/pipeline-check.js': [
-            ('if (typeof spec.type === "string") {\n        const blank',
-             'if (typeof spec.type === "string") {\n        if (spec.optional === true) continue; // Explicitly optional text can be empty.\n        const blank')],
         IRIDE + 'lib/ui/forms/node-panels.js': [
             ('import { SwarmPanel } from "./swarm-panel.js";',
              'import { ScreenGazePanel } from "./screen-gaze-panel.js";\nimport { SwarmPanel } from "./swarm-panel.js";'),
@@ -79,12 +70,21 @@ def main():
     target = args.target.expanduser().resolve()
     try:
         changes = plan(target)
+        legacy = target / 'N2uCore/inference/gazedino.py'
+        removals = []
+        if legacy.is_file():
+            source = legacy.read_text(encoding='utf-8')
+            if 'class GazeDinoEngine' not in source or 'class GazeDINO' not in source:
+                raise ValueError('Legacy gazedino.py differs from the gaze integration; migrate it manually')
+            removals.append(legacy.relative_to(target).as_posix())
     except (ValueError, OSError, KeyError) as exc:
         parser.exit(1, f'Preflight failed; no changes written: {exc}\n')
     for rel in changes:
         print(rel)
+    for rel in removals:
+        print(f'Remove legacy engine: {rel}')
     if not args.apply:
-        print(f'Preview: {len(changes)} files. Run with --apply to install.')
+        print(f'Preview: {len(changes)} files, {len(removals)} legacy removals. Run with --apply to install.')
         return
     backup = target / '.gaze-integration-backups' / datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     for rel, data in changes.items():
@@ -95,6 +95,12 @@ def main():
             shutil.copy2(out, saved)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(data)
+    for rel in removals:
+        out = target / rel
+        saved = backup / rel
+        saved.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(out, saved)
+        out.unlink()
     print(f'Installed {len(changes)} files. Existing files backed up under {backup}')
     print('Review the diff, provision the checkpoint/dependencies, then restart services when idle.')
 

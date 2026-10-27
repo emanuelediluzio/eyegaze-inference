@@ -26,3 +26,12 @@ test('live updates reuse metric elements and format technical JSON only when exp
  details.open=true;details.events.toggle();assert.equal(JSON.parse(log.textContent).yaw_deg,20);
  }finally{panel.release();env.restore();}
 });
+
+test('direction card labels landmark head roll separately from model angles',()=>{
+ const env=environment();const panel=new GazeDirectionPanel({node:{settings:{name:'Gaze'}},renderer:env.renderer});const root=new Element('root');
+ try {panel.render(root);panel.update({...direction,roll_deg:12.5,roll_source:'head_landmarks'});
+ assert(descendants(root,'dt').some(el=>el.textContent==='Inclinazione testa · roll'));
+ assert.equal(descendants(root,'dd')[2].textContent,'12.5°');
+ panel.update({...direction,status:'no_face',roll_deg:null});assert.equal(descendants(root,'dd')[2].textContent,'—');
+ }finally{panel.release();env.restore();}
+});

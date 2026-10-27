@@ -63,32 +63,8 @@ export class ScreenGazePanel {
       this.#paint();
     });
     toggleRow.append(this.#toggle, document.createTextNode("Mostra punto nella pagina"));
-    const advanced = el("details", "gaze-details"); advanced.append(el("summary", "", "Opzioni avanzate"));
-    const explanation = el("p", "gaze-hint", "Salva la calibrazione per riutilizzarla con la stessa postazione. Il file contiene coefficienti e dimensioni dell’area calibrata, non immagini o pesi del modello.");
-    const file = el("input"); file.type = "file"; file.accept = ".json,application/json"; file.hidden = true;
-    file.addEventListener("change", () => {
-      const selected = file.files?.[0]; file.value = "";
-      if (selected) this.#run(async () => {
-        const value = JSON.parse(await selected.text());
-        this.#calibration = await this.#command("setCalibration", { calibration: value });
-        this.#session.setCalibration(this.#calibration);
-        this.#message.textContent = this.#invalid ? "Dimensioni diverse: ricalibra questa finestra." : "Calibrazione caricata. Verifica il punto con la stessa postazione.";
-        this.#apply();
-      });
-    });
-    const importButton = el("button", "command-run", "Carica calibrazione"); importButton.type = "button";
-    importButton.addEventListener("click", () => file.click()); this.#buttons.push(importButton);
-    const exportButton = el("button", "command-run", "Salva calibrazione"); exportButton.type = "button";
-    exportButton.addEventListener("click", () => this.#run(async () => {
-      const value = await this.#command("getCalibration");
-      if (!value) throw new Error("Nessuna calibrazione da salvare.");
-      const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
-      const link = el("a"); link.href = url; link.download = "screen-calibration.json"; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    })); this.#buttons.push(exportButton);
-    const importActions = el("div", "gaze-actions"); importActions.append(importButton, exportButton, file);
     const technical = el("details", "gaze-details"); technical.append(el("summary", "", "Dettagli tecnici"));
-    this.#details = el("pre"); technical.append(this.#details); advanced.append(explanation, importActions, technical);
+    this.#details = el("pre"); technical.append(this.#details);
     this.#results = el("section", "gaze-validation-results");
     this.#saveResults = el("button", "command-run", "Salva risultati"); this.#saveResults.type = "button";
     this.#buttons.push(this.#saveResults);
@@ -98,7 +74,7 @@ export class ScreenGazePanel {
       const link = el("a"); link.href = url; link.download = "gaze-validation.json"; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
-    root.append(heading, preview, countLabel, actions, toggleRow, hint, this.#message, this.#results, advanced);
+    root.append(heading, preview, countLabel, actions, toggleRow, hint, this.#message, this.#results, technical);
     container.replaceChildren(root);
     this.#ownsSession = !this.#options.sessionFor;
     this.#session = this.#options.sessionFor?.(this.#options.node.settings.name, () => new ScreenGazeSession(this.#options)) ?? new ScreenGazeSession(this.#options);

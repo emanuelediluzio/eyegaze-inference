@@ -2,10 +2,7 @@
   "module": "N2uCore.dyn.screenpointofgaze",
   "class": "ScreenPointOfGaze",
   "name": "ScreenGaze",
-  "props": {
-    "calibrationPath": "",
-    "maxSampleAgeSecs": 2.0
-  },
+  "props": {},
   "network": {
     "ssl": {
       "enabled": false,

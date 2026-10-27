@@ -7,7 +7,7 @@ This guide is for developers integrating the two nodes into an existing **N2uCor
 | What you need | Location | Destination / purpose |
 |---|---|---|
 | **Minimal `gazedino_inference.joblib` model** | **[Direct GitHub download](https://github.com/emanuelediluzio/eyegaze-inference/releases/download/inference-v1/gazedino_inference.joblib)** · **[Direct Gitea download](http://192.168.70.200:3000/attachments/8a538e7d-0727-4b6b-81d3-77c27c6deb06)** · [release details](http://192.168.70.200:3000/ediluzio/eyegaze-inference/releases/tag/inference-v1) | Copy and rename to **`N2uCore/res/models/gazedino/model.joblib`** in the target framework |
-| **Gaze Direction node** | [N2uCore/dyn/eyegaze.py](N2uCore/dyn/eyegaze.py) | `GazeDirection(MlDevice)` and `EyeGazeTicker(MlTicker)`: video to yaw/pitch and a 3D vector |
+| **Gaze Direction node** | [N2uCore/dyn/eyegaze.py](N2uCore/dyn/eyegaze.py) | `GazeDirection(MlDevice)` and `EyeGazeTicker(MlTicker)`: video to yaw/pitch, MediaPipe head roll and a 3D vector |
 | **Screen Point of Gaze node** | [N2uCore/dyn/screenpointofgaze.py](N2uCore/dyn/screenpointofgaze.py) | `ScreenPointOfGaze(SwDevice)`: gaze direction to a screen point after calibration |
 | **Complete installation** | [install.py](install.py) · [framework-hooks.json](framework-hooks.json) | Installs engines, catalogue entries, Iride panels and the required framework hooks |
 | **Example pipeline** | [examples/eyegaze/gazedino.iride.json](examples/eyegaze/gazedino.iride.json) | Import into Iride and select the target device’s SysInit and webcam |
@@ -34,9 +34,9 @@ python integrations/n2ucore/install.py "/path/to/n2ucore"
 python integrations/n2ucore/install.py "/path/to/n2ucore" --apply
 ```
 
-On Windows, a target path could be `C:/repos/n2ucore`. Running without `--apply` previews the changes. Running with `--apply` checks all integration points before writing and backs up existing files under `.gaze-integration-backups/`.
+On Windows, a target path could be `C:/repos/n2ucore`. Running without `--apply` previews the changes. Running with `--apply` checks all integration points before writing and backs up existing files under `.gaze-integration-backups/`. An upgrade also backs up and removes the previous integration engine `gazedino.py`; the implementation now lives in `gazedinoengine.py`.
 
-The installer merges the two nodes into the existing catalogues while preserving other entries. The JSON files under `N2uCore/res/` are **fragments to merge**, not complete replacement catalogues. Shared Card/CardBoard hooks, panel registration and optional-field support are declared in `framework-hooks.json` and `install.py`. If the framework is incompatible, preflight stops without writing. Repeating the installation against the same code produces no further changes.
+The installer merges the two nodes into the existing catalogues while preserving other entries. The JSON files under `N2uCore/res/` are **fragments to merge**, not complete replacement catalogues. Shared Card/CardBoard hooks, panel registration are declared in `framework-hooks.json` and `install.py`. If the framework is incompatible, preflight stops without writing. Repeating the installation against the same code produces no further changes.
 
 The installer does not start services, install weights or change the webcam configuration. This directory is a framework overlay: do not add it to `PYTHONPATH` as an alternative framework.
 
@@ -48,15 +48,9 @@ Download the model using the links above. Create the target directory in the **d
 N2uCore/res/models/gazedino/model.joblib
 ```
 
-Set Gaze Direction’s **Checkpoint path** parameter to:
+The model path is fixed at `models/gazedino/model.joblib`, resolved through the framework resource manager. There is no model selector, model-path parameter or per-node tuning panel. Old saved settings do not override these fixed values.
 
-```text
-models/gazedino/model.joblib
-```
-
-This is the default for new nodes. Existing saved Iride projects retain their explicit settings: update this parameter if they still reference the original `.pt` file. An absolute path is also supported; it must refer to the computer executing the node.
-
-The **DINOv2 source code** is also required. When **Local DINOv2 source directory (offline)** is empty, the engine uses the Torch cache `facebookresearch_dinov2_main`, or downloads the source if it is missing. For an offline device, prepare the cache or explicitly provide a local directory containing `hubconf.py`. Loading uses `pretrained=False`: all backbone weights are already included in the joblib.
+DINOv2 source must already be available in the local Torch Hub cache at `facebookresearch_dinov2_main`, containing `hubconf.py`. Runtime loading is local-only and fails with a clear error if the cache is missing. `pretrained=False` is used: backbone weights are already included in the joblib.
 
 ## 3. Run in Iride
 
@@ -69,13 +63,7 @@ GazeDirection.GazeDirection → ScreenPointOfGaze.GazeDirection
 
 Import the [portable pipeline](examples/eyegaze/gazedino.iride.json), select the correct SysInit and verify the webcam ID **on the computer executing WebCam**. The ID depends on device enumeration on that machine.
 
-| Setting | Value / meaning |
-|---|---|
-| Gaze Direction — Checkpoint path | `models/gazedino/model.joblib` |
-| Compute device | `auto`: CUDA, MPS or CPU, depending on availability |
-| Maximum inference FPS | `15`: an upper limit, not a guaranteed rate |
-| Local DINOv2 source directory (offline) | Optional; cached or local source as described above |
-| Screen Point of Gaze — Screen calibration JSON | Optional; without calibration, the node emits `uncalibrated` |
+The direction node uses fixed defaults: the minimal joblib above, automatic CUDA/MPS/CPU selection, a maximum of 15 inference frames per second, EMA alpha 0.25 and a 600-second idle unload. The screen node accepts input captured within 2 seconds and always starts uncalibrated. Neither node exposes additional configuration fields.
 
 After installation, restart services using the device’s normal procedure, with the pipeline stopped, and reload Iride without cache. Then start the pipeline.
 
@@ -83,13 +71,13 @@ Open Gaze Direction to see the video, face box, eye markers and gaze arrows; tec
 
 The **Show point on page** checkbox belongs to the pipeline session: closing, hiding or minimizing the card leaves the dot active; reopening it restores the selected checkbox. Unchecking it hides the dot. Stopping the pipeline clears the session. Missing faces, stale data, disconnections and a hidden page temporarily hide the dot without changing the preference. Changes to window size, window position or display density require recalibration.
 
-**Load/Save calibration** are under Advanced options. The calibration JSON contains coefficients and calibrated area dimensions; it is separate from the model’s joblib. Cancelling a new calibration preserves the previous fit. The dot is drawn inside the Iride page and cannot remain above other applications or after the browser closes.
+Calibration is held only for the current node process. There are no saved calibration files or import/export controls. Calibrate after starting a new pipeline; cancelling a replacement calibration keeps the current session’s previous fit. The dot is drawn inside the Iride page and cannot remain above other applications or after the browser closes.
 
 Both cards reuse Iride’s shared command buttons (`command-run`, also used by TextInput, TextViewer and Swarm), form controls and card palette. The base font is inherited from Iride’s user preferences; internal headings use the standard card-title size. Larger numeric direction readings are reserved for the live measurements. Card colours follow the framework in both light and dark canvas themes. The layout adapts to the card width, with direction metrics moving below the video in narrow cards. No separate button theme is bundled.
 
 Control names in this guide describe the corresponding panel actions in English. This documentation update does not change the installed UI language.
 
-For channel contracts, calibration details and JSON compatibility, see [examples/eyegaze/README.md](examples/eyegaze/README.md).
+For channel contracts and session calibration details, see [examples/eyegaze/README.md](examples/eyegaze/README.md).
 
 ## Integration files and directory hierarchy
 
@@ -99,7 +87,7 @@ These paths are relative to this directory and match their destinations in the N
 N2uCore/
   dyn/eyegaze.py                         ML node and dedicated ticker
   dyn/screenpointofgaze.py               Projection and calibration node
-  inference/gazedino.py                  PyTorch network and face detection
+  inference/gazedinoengine.py            Object-based engine, composed network and face detection
   inference/gazeartifact.py              Joblib contract, loader and exporter
   inference/screengaze.py                Calibration fitting and projection
   res/dyndefs.json                       Catalogue fragment for the two nodes
@@ -119,6 +107,10 @@ tools/verify_eyegaze_iride.py            Full transport integration test
 ```
 
 Gaze Direction follows the **`MlDevice` / `MlTicker`** pattern: decoding, face detection and PyTorch inference run on the ML thread, with one frame in flight and obsolete frames dropped. The joblib format does not turn the network into a tabular model. Screen Point of Gaze uses **`SwDevice`** and NumPy; it does not load the neural network. Iride communicates only with **uinode**, using the framework’s WebSocket channels; nodes communicate through Flow.
+
+The engine is `GazeDinoEngine(object)` in `gazedinoengine.py`. A standard PyTorch `Sequential` composes the existing backbone and head; there is no nested network subclass. Checkpoint keys remain `backbone.*` and `head.*`. Internal instance state uses underscore-prefixed camelCase names, dependencies are declared explicitly at module scope, as in the framework’s voice node. Node and ticker construction do not load weights or create a face tracker; both are created by the ML ticker’s model-load hook. Existing snake_case JSON field names are retained as the channel protocol, not Python variable names.
+
+Yaw and pitch are neural-network predictions. `roll_rad` and `roll_deg` describe head tilt measured from MediaPipe Face Mesh outer-eye landmarks 33 and 263, using pixel coordinates and clockwise-positive image angles. `roll_source` is `head_landmarks`. This is an image-plane tilt estimate, not a full 3D head-pose Euler angle, a third learned network output or ocular torsion; it does not change the yaw/pitch gaze vector or screen calibration. Missing or degenerate eye landmarks yield null roll values. No model retraining or new joblib is needed. For full 3D head pose, a separate geometry-based pose estimate is required; MediaPipe documents a [face geometry transformation pipeline](https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/face_mesh.md#face-transform-module).
 
 ## Joblib contents and export
 
@@ -147,10 +139,10 @@ The exporter reads the generated file back and compares every weight against the
 
 - **183 float32 tensors identical** to the original checkpoint, with no quantization or weight changes.
 - **Identical predictions on five crops** of a public image, with a maximum difference of 0 radians on MPS, verified locally and on the Mac mini. [Parity and checksum report](examples/eyegaze/inference-export-verification.json).
-- **Full Mac mini integration test** using a test video: WebSocket → uinode → sysinit → WebCam → Gaze Direction/MlTicker → Screen Point of Gaze → WebSocket, including projection checks and shutdown to IDLE. [Test report](examples/eyegaze/minimal-node-integration-test.json).
+- **Historical full Mac mini integration test (before the local session-only calibration revision)** using a test video: WebSocket → uinode → sysinit → WebCam → Gaze Direction/MlTicker → Screen Point of Gaze → WebSocket, including projection checks and shutdown to IDLE. [Test report](examples/eyegaze/minimal-node-integration-test.json).
 - Verified environment: Python 3.11, MediaPipe 0.10.21, NumPy 1.26.4 and MPS. Select torch/torchvision builds suited to the target hardware. Windows and Linux have not yet been certified through equivalent tests.
 
-The file reduction removes training state; the network remains DINOv2 ViT-B/14. It is not evidence of a lower computational cost. A Mac mini M1 benchmark measured approximately 100–150 ms per full analysis; `maxFps=15` is a ceiling. Export parity is not a new accuracy validation: pointing accuracy must be checked with the actual person and monitor, using targets excluded from calibration.
+The file reduction removes training state; the network remains DINOv2 ViT-B/14. It is not evidence of a lower computational cost. A Mac mini M1 benchmark measured approximately 100–150 ms per full analysis; the fixed 15 FPS limit is a ceiling. Export parity is not a new accuracy validation: pointing accuracy must be checked with the actual person and monitor, using targets excluded from calibration.
 
 To repeat the checks, run from the **N2uCore checkout root** in its Python environment:
 
@@ -158,7 +150,7 @@ To repeat the checks, run from the **N2uCore checkout root** in its Python envir
 python -m pip install -r /path/to/eyegaze-inference/integrations/n2ucore/requirements-dev.txt
 python -m pytest tests/dyn/test_gazeartifact.py tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py -q
 node --test tests/web/gaze-direction-panel.test.mjs tests/web/gaze-calibration.test.mjs tests/web/screen-gaze-panel.test.mjs tests/web/optional-gaze-fields.test.mjs
-python tools/verify_eyegaze_iride.py --fixture /path/to/face.png --checkpoint /path/to/model.joblib --hub-dir /path/to/dinov2
+python tools/verify_eyegaze_iride.py --fixture /path/to/face.png
 ```
 
 The full test repeats a public image in a test video and does not require a physical webcam. Test dependencies are separate from runtime dependencies.
@@ -167,9 +159,9 @@ The full test repeats a public image in a test video and does not require a phys
 
 1. Keep the same camera, monitor, browser viewport and seating position. Enter fullscreen before starting if you intend to use fullscreen.
 2. Choose **16 points**, calibrate (about 48 s), then run **Verify accuracy (9 points)** (about 27 s). Follow each new target without moving your head.
-3. Choose **32 points**, calibrate (about 96 s), then repeat the same nine-point verification. The successful second fit replaces the first; save each calibration beforehand if you need both files.
+3. Choose **32 points**, calibrate (about 96 s), then repeat the same nine-point verification. The successful second fit replaces the first; validation reports for both modes remain available in the current session.
 4. Compare the two rows in the card. A lower mean error and RMSE indicate better pointing on these held-out targets. Repeat both modes, preferably reversing their order, to check that any improvement is consistent.
-5. Use **Save results** to export the validation report as JSON. Results are kept for the pipeline session, including while the card is closed; stopping the pipeline clears them. Imported calibrations have an unknown target count and are labelled accordingly.
+5. Use **Save results** to export the validation report as JSON. Results are kept for the pipeline session, including while the card is closed; stopping the pipeline clears them. Starting a new node process requires a new calibration.
 
 Calibration covers a 4×4 or 8×4 grid over the same area. Verification uses a separate 3×3 grid that does not overlap either calibration grid. It never refits the calibration. The first second at each verification target is discarded; only unique, valid, timestamped samples captured after settling count, with at least three observations per target and a bound of 128.
 

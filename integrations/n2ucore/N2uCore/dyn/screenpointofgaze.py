@@ -1,13 +1,12 @@
 import json
 import math
 import time
-from pathlib import Path
 
 from N2uCore.dyn.wrk.device import SwDevice
 from N2uCore.dyn.wrk.service import tool
 from N2uCore.dyn.wrk.input import WorkerFlowInput
 from N2uCore.miniflow.channel import FlowChannelType
-from N2uCore.inference.screengaze import ScreenCalibration, screen_point, validate_calibration
+from N2uCore.inference.screengaze import ScreenCalibration, screenPoint
 
 
 class ScreenPointOfGaze(SwDevice):
@@ -16,19 +15,12 @@ class ScreenPointOfGaze(SwDevice):
         self._cal = ScreenCalibration()
         self._source = self._flow = self._receiver = None
         self._output = None
-        self._last_ts = None
+        self._lastTs = None
 
     def _onSetup(self):
         self._source = self.service().flowPack().get("GazeDirection")
         if not self._source:
             self.err("ScreenPointOfGaze requires a GazeDirection input")
-            return False
-        path = self._props.get("calibrationPath", "")
-        try:
-            if path:
-                self._cal.calibration = validate_calibration(json.loads(Path(path).expanduser().read_text()))
-        except Exception as exc:
-            self.err("Invalid calibration: {}".format(exc))
             return False
         self._flow = WorkerFlowInput(self.service())
         self._flow.setCredentials("guest", "password")
@@ -63,7 +55,7 @@ class ScreenPointOfGaze(SwDevice):
     def _onSubscribe(self, flow, chanID):
         if self._receiver is not None:
             self._receiver.hasData.detach(self._onData)
-        self._last_ts = None
+        self._lastTs = None
         self._cal.cancel()
         self._receiver = flow.buildReceiver(chanID)
         self._receiver.clear()
@@ -73,7 +65,7 @@ class ScreenPointOfGaze(SwDevice):
         if self._receiver is not None:
             self._receiver.hasData.detach(self._onData)
         self._receiver = None
-        self._last_ts = None
+        self._lastTs = None
         self._cal.cancel()
         if self.isRunning():
             self._publish({"status": "input_disconnected", "screen_xy_px": None}, time.time_ns() // 1000)
@@ -99,12 +91,10 @@ class ScreenPointOfGaze(SwDevice):
             output["status"] = "invalid_input"
             return output
         age = (time.time_ns() // 1000 - ts) / 1e6
-        if (self._last_ts is not None and ts <= self._last_ts) or not -0.5 <= age <= self._props[
-            "maxSampleAgeSecs"
-        ]:
+        if (self._lastTs is not None and ts <= self._lastTs) or not -0.5 <= age <= 2.0:
             output["status"] = "stale_input"
             return output
-        self._last_ts = ts
+        self._lastTs = ts
         if sample.get("status") != "ok":
             return output
         yaw, pitch = sample.get("yaw_rad"), sample.get("pitch_rad")
@@ -115,11 +105,11 @@ class ScreenPointOfGaze(SwDevice):
             output["status"] = "invalid_input"
             return output
         self._cal.feed(yaw, pitch, time.monotonic(), ts)
-        if self._cal.calibration is None:
+        if self._cal.calibration() is None:
             output["status"] = "uncalibrated"
         else:
-            output["screen_xy_px"] = screen_point(yaw, pitch, self._cal.calibration)
-            output["screen_size_px"] = [self._cal.calibration[k] for k in ("screen_w", "screen_h")]
+            output["screen_xy_px"] = screenPoint(yaw, pitch, self._cal.calibration())
+            output["screen_size_px"] = [self._cal.calibration()[k] for k in ("screen_w", "screen_h")]
         return output
 
     def _onData(self, receiver):
@@ -141,7 +131,7 @@ class ScreenPointOfGaze(SwDevice):
         return True
 
     def _onStop(self):
-        self._last_ts = None
+        self._lastTs = None
         self._cal.cancel()
 
     def _onQuit(self):
@@ -161,36 +151,11 @@ class ScreenPointOfGaze(SwDevice):
 
     @tool
     def calibrationStatus(self, conn, args):
-        self.service().sendResponse(
-            conn,
-            True,
-            {
-                "calibrated": self._cal.calibration is not None,
-                "collecting": self._cal.size is not None,
-                "targets": len(self._cal.targets),
-                "active_samples": len(self._cal.active["samples"]) if self._cal.active else 0,
-            },
-        )
-
-    @tool
-    def setCalibration(self, conn, args):
-        def apply():
-            value = validate_calibration(args["calibration"])
-            self._cal.cancel()
-            self._cal.calibration = value
-            return value
-
-        self._command(conn, apply)
+        self.service().sendResponse(conn, True, self._cal.status())
 
     @tool
     def getCalibration(self, conn, args):
-        self.service().sendResponse(conn, True, self._cal.calibration)
-
-    @tool
-    def clearCalibration(self, conn, args):
-        self._cal.cancel()
-        self._cal.calibration = None
-        self.service().sendResponse(conn, True, {"calibrated": False})
+        self.service().sendResponse(conn, True, self._cal.calibration())
 
     @tool
     def beginCalibration(self, conn, args):
@@ -204,7 +169,7 @@ class ScreenPointOfGaze(SwDevice):
 
     @tool
     def finishTarget(self, conn, args):
-        self._command(conn, self._cal.finish_target)
+        self._command(conn, self._cal.finishTarget)
 
     @tool
     def fitCalibration(self, conn, args):

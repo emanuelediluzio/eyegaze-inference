@@ -3,7 +3,9 @@ import os
 import tempfile
 from pathlib import Path
 
+import joblib
 import numpy as np
+import torch
 
 FORMAT = "n2u.gazedino.inference.v1"
 ARCHITECTURE = {"name": "GazeDINO", "backbone": "dinov2_vitb14", "head_dims": [768, 512, 128, 2]}
@@ -26,7 +28,7 @@ def sha256(path):
     return digest.hexdigest()
 
 
-def validate_artifact(value):
+def validateArtifact(value):
     if not isinstance(value, dict) or set(value) != FIELDS or value["format"] != FORMAT:
         raise ValueError("Unsupported GazeDINO inference artifact")
     for name, expected in [
@@ -61,23 +63,16 @@ def validate_artifact(value):
     return value
 
 
-def load_model_state(path):
-    import torch
-
+def loadModelState(path):
     path = Path(path)
     if path.suffix.lower() == ".joblib":
-        import joblib
-
-        artifact = validate_artifact(joblib.load(path))
+        artifact = validateArtifact(joblib.load(path))
         return {name: torch.from_numpy(array) for name, array in artifact["state_dict"].items()}
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     return checkpoint["model"]
 
 
-def export_inference(source, destination):
-    import torch
-    import joblib
-
+def exportInference(source, destination):
     source, destination = Path(source).expanduser(), Path(destination).expanduser()
     if destination.suffix.lower() != ".joblib":
         raise ValueError("Destination must have a .joblib extension")
@@ -89,7 +84,7 @@ def export_inference(source, destination):
         not isinstance(v, torch.Tensor) or v.dtype != torch.float32 for v in state.values()
     ):
         raise ValueError("Expected a float32 model state_dict")
-    artifact = validate_artifact(
+    artifact = validateArtifact(
         {
             "format": FORMAT,
             "architecture": ARCHITECTURE.copy(),
@@ -107,7 +102,7 @@ def export_inference(source, destination):
     os.close(fd)
     try:
         joblib.dump(artifact, temporary, compress=3, protocol=4)
-        restored = validate_artifact(joblib.load(temporary))
+        restored = validateArtifact(joblib.load(temporary))
         if set(restored["state_dict"]) != set(state):
             raise ValueError("Export lost weight names")
         for name, tensor in state.items():

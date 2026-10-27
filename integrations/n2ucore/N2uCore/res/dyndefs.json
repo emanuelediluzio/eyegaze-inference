@@ -4,45 +4,8 @@
     "module": "N2uCore.dyn.eyegaze",
     "class": "GazeDirection",
     "label": "Gaze Direction",
-    "description": "RGB face to camera-space gaze angles and unit 3D vector. No screen calibration.",
-    "PROPS_SCHEMA": {
-      "checkpoint": {
-        "type": "STR",
-        "default": "models/gazedino/model.joblib"
-      },
-      "device": {
-        "type": "ENUM",
-        "itemType": "STR",
-        "values": [
-          "auto",
-          "cpu",
-          "mps",
-          "cuda"
-        ],
-        "default": "auto"
-      },
-      "hubDir": {
-        "type": "STR",
-        "default": ""
-      },
-      "maxFps": {
-        "type": "FLOAT",
-        "min": 0.1,
-        "max": 30,
-        "default": 15.0
-      },
-      "emaAlpha": {
-        "type": "FLOAT",
-        "min": 0.01,
-        "max": 1,
-        "default": 0.25
-      },
-      "idleTimeout": {
-        "type": "INT",
-        "min": 0,
-        "default": 600
-      }
-    },
+    "description": "RGB face to gaze yaw/pitch, landmark-derived head roll and unit 3D gaze vector. Fixed GazeDINO model, automatic compute device, up to 15 FPS.",
+    "PROPS_SCHEMA": {},
     "inputs": [
       {
         "name": "VideoStream",
@@ -62,19 +25,8 @@
     "module": "N2uCore.dyn.screenpointofgaze",
     "class": "ScreenPointOfGaze",
     "label": "Screen Point of Gaze",
-    "description": "Maps upstream gaze direction to calibrated screen pixels; no neural model. Includes guided 16-point calibration.",
-    "PROPS_SCHEMA": {
-      "calibrationPath": {
-        "type": "STR",
-        "default": ""
-      },
-      "maxSampleAgeSecs": {
-        "type": "FLOAT",
-        "min": 0.1,
-        "max": 30,
-        "default": 2.0
-      }
-    },
+    "description": "Maps upstream gaze direction to screen pixels after session-only guided calibration. No saved calibration files or neural model.",
+    "PROPS_SCHEMA": {},
     "inputs": [
       {
         "name": "GazeDirection",
@@ -93,23 +45,9 @@
         "label": "calibrationStatus",
         "args": {}
       },
-      "setCalibration": {
-        "name": "setCalibration",
-        "label": "setCalibration",
-        "args": {
-          "calibration": {
-            "type": "ANY"
-          }
-        }
-      },
       "getCalibration": {
         "name": "getCalibration",
         "label": "getCalibration",
-        "args": {}
-      },
-      "clearCalibration": {
-        "name": "clearCalibration",
-        "label": "clearCalibration",
         "args": {}
       },
       "beginCalibration": {

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from N2uCore.inference.gazeartifact import export_inference
+from N2uCore.inference.gazeartifact import exportInference
 
 
 def main():
@@ -13,7 +13,7 @@ def main():
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    print(json.dumps(export_inference(args.source, args.output), indent=2))
+    print(json.dumps(exportInference(args.source, args.output), indent=2))
 
 
 if __name__ == '__main__':
