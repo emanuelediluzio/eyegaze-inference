@@ -14,7 +14,7 @@ export class GazeDirectionPanel {
     stage.append(this.#canvas,this.#svg);main.append(stage);
     const controls=el("div","gaze-switches");
     for(const [label,value,set] of [["Riquadro volto",true,v=>this.#box=v],["Frecce",true,v=>this.#arrows=v],["Punti occhi",true,v=>this.#eyes=v],["Specchio",false,v=>stage.classList.toggle("mirrored",v)]]) {
-      const row=el("label");const input=el("input");input.type="checkbox";input.checked=value;input.addEventListener("change",()=>{set(input.checked);this.#draw();});row.append(input,document.createTextNode(label));controls.append(row);
+      const row=el("label","field");const input=el("input");input.type="checkbox";input.checked=value;input.addEventListener("change",()=>{set(input.checked);this.#draw();});row.append(input,document.createTextNode(label));controls.append(row);
     }
     main.append(controls,el("p","gaze-hint","Guarda la webcam mantenendo il volto visibile. Le frecce rappresentano la direzione, non il punto sul monitor."));
     const side=el("aside","gaze-readings");side.append(el("h3","","Sguardo in tempo reale"));this.#stats=el("dl","gaze-metrics");side.append(this.#stats);

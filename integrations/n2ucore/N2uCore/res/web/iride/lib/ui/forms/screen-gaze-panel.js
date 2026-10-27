@@ -29,19 +29,19 @@ export class ScreenGazePanel {
     this.#message = el("p", "gaze-message"); this.#message.setAttribute("aria-live", "polite");
     const hint = el("p", "gaze-hint", "Il punto resta attivo anche chiudendo questa card: togli il check per nasconderlo. Mantieni la stessa finestra, lo stesso schermo e la stessa posizione della webcam usati per calibrare.");
     const actions = el("div", "gaze-actions");
-    const add = (label, fn, primary = false) => {
-      const button = el("button", primary ? "gaze-primary" : "", label); button.type = "button";
+    const add = (label, fn) => {
+      const button = el("button", "command-run", label); button.type = "button";
       button.addEventListener("click", () => this.#run(fn)); this.#buttons.push(button); actions.append(button); return button;
     };
     const countLabel = el("label", "gaze-count", "Punti di calibrazione ");
-    this.#pointCount = el("select"); this.#pointCount.setAttribute("aria-label", "Punti di calibrazione");
+    this.#pointCount = el("select", "command-arg-input"); this.#pointCount.setAttribute("aria-label", "Punti di calibrazione");
     for (const count of [16, 32]) { const option = el("option", "", `${count} punti · circa ${count * 3} s`); option.value = String(count); this.#pointCount.append(option); }
     this.#pointCount.value = "16";
     this.#pointCount.addEventListener("change", () => {
       this.#session.targetCount = Number(this.#pointCount.value); this.#apply();
     });
     countLabel.append(this.#pointCount);
-    this.#calibrateButton = add("Calibra 16 punti", () => this.#calibrate(), true);
+    this.#calibrateButton = add("Calibra 16 punti", () => this.#calibrate());
     this.#validateButton = add("Verifica precisione (9 punti)", () => this.#validate());
     add("Prova a schermo intero", async () => {
       if (!document.fullscreenElement) {
@@ -54,7 +54,7 @@ export class ScreenGazePanel {
         this.#message.textContent = "Calibra qui a schermo intero, poi attiva Mostra punto. Esc esce dallo schermo intero.";
       } else { this.#session.setEnabled(true); this.#paint(); }
     });
-    const toggleRow = el("label", "gaze-switches");
+    const toggleRow = el("label", "gaze-switches field");
     this.#toggle = el("input"); this.#toggle.type = "checkbox";
     this.#toggle.addEventListener("change", () => {
       this.#session.setEnabled(this.#toggle.checked);
@@ -76,9 +76,9 @@ export class ScreenGazePanel {
         this.#apply();
       });
     });
-    const importButton = el("button", "", "Carica calibrazione"); importButton.type = "button";
+    const importButton = el("button", "command-run", "Carica calibrazione"); importButton.type = "button";
     importButton.addEventListener("click", () => file.click()); this.#buttons.push(importButton);
-    const exportButton = el("button", "", "Salva calibrazione"); exportButton.type = "button";
+    const exportButton = el("button", "command-run", "Salva calibrazione"); exportButton.type = "button";
     exportButton.addEventListener("click", () => this.#run(async () => {
       const value = await this.#command("getCalibration");
       if (!value) throw new Error("Nessuna calibrazione da salvare.");
@@ -90,7 +90,7 @@ export class ScreenGazePanel {
     const technical = el("details", "gaze-details"); technical.append(el("summary", "", "Dettagli tecnici"));
     this.#details = el("pre"); technical.append(this.#details); advanced.append(explanation, importActions, technical);
     this.#results = el("section", "gaze-validation-results");
-    this.#saveResults = el("button", "", "Salva risultati"); this.#saveResults.type = "button";
+    this.#saveResults = el("button", "command-run", "Salva risultati"); this.#saveResults.type = "button";
     this.#buttons.push(this.#saveResults);
     this.#saveResults.addEventListener("click", () => {
       const reports = this.#session.validationResults;
@@ -214,7 +214,7 @@ export class ScreenGazePanel {
     const overlay = el("div", "gaze-calibration"); this.#overlay = overlay;
     overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true");
     overlay.setAttribute("aria-label", "Verifica indipendente dello sguardo"); overlay.tabIndex = -1;
-    const dot = el("div", "gaze-target"), text = el("p"), cancel = el("button", "", "Annulla (Esc)");
+    const dot = el("div", "gaze-target"), text = el("p"), cancel = el("button", "command-run", "Annulla (Esc)");
     cancel.type = "button"; cancel.onclick = () => this.#cancel();
     overlay.append(dot, text, cancel); document.body.append(overlay); overlay.focus();
     const check = () => {
@@ -247,7 +247,7 @@ export class ScreenGazePanel {
     const overlay = el("div", "gaze-calibration"); this.#overlay = overlay;
     overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true");
     overlay.setAttribute("aria-label", "Calibrazione dello sguardo"); overlay.tabIndex = -1;
-    const dot = el("div", "gaze-target"), text = el("p"), cancel = el("button", "", "Annulla (Esc)");
+    const dot = el("div", "gaze-target"), text = el("p"), cancel = el("button", "command-run", "Annulla (Esc)");
     cancel.type = "button"; cancel.onclick = () => this.#cancel();
     overlay.append(dot, text, cancel); document.body.append(overlay); overlay.focus();
     const context = viewport(), width = context.width, height = context.height;
