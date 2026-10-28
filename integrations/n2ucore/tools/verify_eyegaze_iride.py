@@ -154,7 +154,7 @@ def main():
             deadline=time.monotonic()+60
             while True:
                 state=control_state()
-                if state['state']=='RUNNING':break
+                if state['state']=='RUNNING' and state['nodes'] and all(node['alive'] for node in state['nodes'].values()):break
                 assert state['state']!='IDLE',state
                 assert time.monotonic()<deadline,state
                 time.sleep(.2)
@@ -162,6 +162,8 @@ def main():
             data=WS(server_url+'/appWS')
             data.call('registerSocketRole',{'role':'DataCollector'})
             subscription=data.call('subscribeNodeChannel',{'nodeName':gaze['settings']['name'],'chanName':'GazeDirection'})
+            assert subscription['props']['type']=='GAZE',subscription
+            assert subscription['props']['schema']=='gaze-direction.v1',subscription
             samples=[];heartbeats=[];deadline=time.monotonic()+90
             while len(samples)<3 and time.monotonic()<deadline:
                 t=time.perf_counter();control_state();heartbeats.append(time.perf_counter()-t)
@@ -179,7 +181,9 @@ def main():
             assert len(samples)==3,'No face predictions received through Iride data WS'
             # Second node must initially report uncalibrated, then collect fresh guided calibration samples.
             screen_name=screen['settings']['name']
-            data.call('subscribeNodeChannel',{'nodeName':screen_name,'chanName':'ScreenPoint'})
+            screenSubscription=data.call('subscribeNodeChannel',{'nodeName':screen_name,'chanName':'ScreenPoint'})
+            assert screenSubscription['props']['type']=='GAZE',screenSubscription
+            assert screenSubscription['props']['schema']=='screen-point-of-gaze.v1',screenSubscription
             uncalibrated=False;deadline=time.monotonic()+20
             while time.monotonic()<deadline:
                 try:raw=data.recv()
@@ -187,6 +191,8 @@ def main():
                 if not isinstance(raw,bytes) or len(raw)<=32:continue
                 point=json.loads(raw[32:])
                 if point.get('schema')=='screen-point-of-gaze.v1' and point['status']=='uncalibrated':
+                    assert point['gaze2d'] is None
+                    assert point['eyeleft']['pupildiameter'] is None and point['eyeright']['pupildiameter'] is None
                     uncalibrated=True;break
             assert uncalibrated,'Screen node must not fabricate uncalibrated pixels'
             def nodeCommand(cmd,args=None):
@@ -206,10 +212,10 @@ def main():
             running=False
             args.out.write_text(json.dumps({'passed':True,'transport':'WebSocket -> uinode -> sysinit -> CvCamera -> Flow -> GazeDirection/MlTicker -> Flow -> ScreenPointOfGaze -> Flow -> uinode -> WebSocket',
                 'physical_camera':False,'accuracy_evaluated':False,'fixture':args.fixture.name,
-                'checkpoint':'models/gazedino/model.joblib','samples':samples,'calibration_target':collected,'uncalibrated_verified':uncalibrated,'guided_collection_verified':True,'max_control_rtt_ms':max(heartbeats)*1000,
+                'checkpoint':'models/gazedino/model.joblib','samples':samples,'calibration_target':collected,'uncalibrated_verified':uncalibrated,'gaze_json_contract_verified':True,'guided_collection_verified':True,'max_control_rtt_ms':max(heartbeats)*1000,
                 'control_reconnects':reconnects,'server_url':server_url,'sysinit':sysname,
                 'palette_defaults':args.palette_defaults,'stopped_to_idle':True},indent=2)+'\n')
-            print('PASS: three direction + screen estimates, calibration parity/clear; stopped to IDLE',flush=True)
+            print('PASS: GAZE direction and screen streams, guided collection and cancellation; stopped to IDLE',flush=True)
         finally:
             if ctrl and running:
                 try:ctrl.call('stopPipeline')

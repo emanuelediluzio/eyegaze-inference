@@ -1,3 +1,4 @@
+import { Texts } from "../../core/texts.js";
 import { el, gazeStyles, statusText, viewport, sameViewport, validPoint } from "./gaze-ui.js";
 
 import { ScreenGazeSession } from "./screen-gaze-session.js";
@@ -11,7 +12,7 @@ export class ScreenGazePanel {
   #session; #unsubscribe; #ownsSession; #attached = false; #sample; #last = 0; #geometry = null; #invalid = false;
   #miniDot; #previewLabel; #calibration = null;
   #overlay; #cancelled = false; #cancelWait = null; #showPoint = false;
-  #visibility; #resize; #pointCount; #validateButton; #results; #saveResults; #validation = null; #shownResults = null; #shownViewport = "";
+  #visibility; #resize; #validateButton; #results; #validation = null; #shownResults = null; #shownViewport = "";
 
   constructor(options) { this.#options = options; this.#alive = options.alive ?? true; }
 
@@ -19,62 +20,46 @@ export class ScreenGazePanel {
     gazeStyles();
     const root = el("section", "gaze-panel gaze-screen");
     const heading = el("header", "gaze-heading");
-    this.#status = el("span", "gaze-status", "In attesa del volto");
-    heading.append(el("strong", "", "Punto di sguardo sullo schermo"), this.#status);
+    this.#status = el("span", "gaze-status", Texts.get("gaze.waitingFace"));
+    heading.append(el("strong", "", Texts.get("gaze.screenTitle")), this.#status);
     const preview = el("div", "gaze-preview");
-    preview.setAttribute("aria-label", "Anteprima del punto sullo schermo");
-    this.#previewLabel = el("span", "gaze-preview-label", "Calibra per vedere dove guardi");
+    preview.setAttribute("aria-label", Texts.get("gaze.previewAria"));
+    this.#previewLabel = el("span", "gaze-preview-label", Texts.get("gaze.calibratePreview"));
     this.#miniDot = el("span", "gaze-mini-dot"); this.#miniDot.hidden = true;
     preview.append(this.#previewLabel, this.#miniDot);
     this.#message = el("p", "gaze-message"); this.#message.setAttribute("aria-live", "polite");
-    const hint = el("p", "gaze-hint", "Il punto resta attivo anche chiudendo questa card: togli il check per nasconderlo. Mantieni la stessa finestra, lo stesso schermo e la stessa posizione della webcam usati per calibrare.");
+    const hint = el("p", "gaze-hint", Texts.get("gaze.screenHint"));
     const actions = el("div", "gaze-actions");
     const add = (label, fn) => {
       const button = el("button", "command-run", label); button.type = "button";
       button.addEventListener("click", () => this.#run(fn)); this.#buttons.push(button); actions.append(button); return button;
     };
-    const countLabel = el("label", "gaze-count", "Punti di calibrazione ");
-    this.#pointCount = el("select", "command-arg-input"); this.#pointCount.setAttribute("aria-label", "Punti di calibrazione");
-    for (const count of [16, 32]) { const option = el("option", "", `${count} punti · circa ${count * 3} s`); option.value = String(count); this.#pointCount.append(option); }
-    this.#pointCount.value = "16";
-    this.#pointCount.addEventListener("change", () => {
-      this.#session.targetCount = Number(this.#pointCount.value); this.#apply();
-    });
-    countLabel.append(this.#pointCount);
-    this.#calibrateButton = add("Calibra 16 punti", () => this.#calibrate());
-    this.#validateButton = add("Verifica precisione (9 punti)", () => this.#validate());
-    add("Prova a schermo intero", async () => {
+    this.#calibrateButton = add(Texts.get("gaze.calibrate", { count: 16 }), () => this.#calibrate());
+    this.#validateButton = add(Texts.get("gaze.verify"), () => this.#validate());
+    add(Texts.get("gaze.fullscreen"), async () => {
       if (!document.fullscreenElement) {
-        if (!document.documentElement.requestFullscreen) throw new Error("Schermo intero non disponibile in questo browser.");
+        if (!document.documentElement.requestFullscreen) throw new Error(Texts.get("gaze.fullscreenUnavailable"));
         await document.documentElement.requestFullscreen();
         await new Promise(resolve => requestAnimationFrame(resolve));
       }
       this.#checkGeometry();
       if (!this.#calibration || this.#invalid || !this.#dimensionsMatch()) {
-        this.#message.textContent = "Calibra qui a schermo intero, poi attiva Mostra punto. Esc esce dallo schermo intero.";
+        this.#message.textContent = Texts.get("gaze.fullscreenHint");
       } else { this.#session.setEnabled(true); this.#paint(); }
     });
     const toggleRow = el("label", "gaze-switches field");
     this.#toggle = el("input"); this.#toggle.type = "checkbox";
     this.#toggle.addEventListener("change", () => {
       this.#session.setEnabled(this.#toggle.checked);
-      if (!this.#dimensionsMatch() || this.#invalid) this.#message.textContent = "Calibra questa finestra prima di mostrare il punto.";
+      if (!this.#dimensionsMatch() || this.#invalid) this.#message.textContent = Texts.get("gaze.calibrateBeforePoint");
       this.#toggle.checked = this.#session.enabled;
       this.#paint();
     });
-    toggleRow.append(this.#toggle, document.createTextNode("Mostra punto nella pagina"));
-    const technical = el("details", "gaze-details"); technical.append(el("summary", "", "Dettagli tecnici"));
+    toggleRow.append(this.#toggle, document.createTextNode(Texts.get("gaze.showPoint")));
+    const technical = el("details", "gaze-details"); technical.append(el("summary", "", Texts.get("gaze.technical")));
     this.#details = el("pre"); technical.append(this.#details);
     this.#results = el("section", "gaze-validation-results");
-    this.#saveResults = el("button", "command-run", "Salva risultati"); this.#saveResults.type = "button";
-    this.#buttons.push(this.#saveResults);
-    this.#saveResults.addEventListener("click", () => {
-      const reports = this.#session.validationResults;
-      const url = URL.createObjectURL(new Blob([JSON.stringify(reports, null, 2)], { type: "application/json" }));
-      const link = el("a"); link.href = url; link.download = "gaze-validation.json"; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-    root.append(heading, preview, countLabel, actions, toggleRow, hint, this.#message, this.#results, technical);
+    root.append(heading, preview, actions, toggleRow, hint, this.#message, this.#results, technical);
     container.replaceChildren(root);
     this.#ownsSession = !this.#options.sessionFor;
     this.#session = this.#options.sessionFor?.(this.#options.node.settings.name, () => new ScreenGazeSession(this.#options)) ?? new ScreenGazeSession(this.#options);
@@ -102,11 +87,10 @@ export class ScreenGazePanel {
     this.#alive = session.alive; this.#sample = session.sample; this.#last = session.last; this.#calibration = session.calibration;
     this.#geometry = session.geometry; this.#invalid = session.invalid; this.#showPoint = session.enabled;
     this.#toggle.checked = session.enabled;
-    this.#pointCount.value = String(session.targetCount);
     if (this.#validation) this.#validation.observe(session.sample, performance.now());
     this.#showResults();
     if (this.#sample) { this.#status.textContent = statusText(this.#sample.status); this.#details.textContent = JSON.stringify(this.#sample, null, 2); }
-    if (session.invalid) this.#message.textContent = "Finestra o schermo cambiati: ripeti la calibrazione.";
+    if (session.invalid) this.#message.textContent = Texts.get("gaze.geometryChanged");
     if (!session.alive || document.hidden) this.#cancel();
     this.#apply(); this.#paint();
   }
@@ -123,16 +107,14 @@ export class ScreenGazePanel {
       this.#miniDot.style.left = `${100*x/this.#sample.screen_size_px[0]}%`;
       this.#miniDot.style.top = `${100*y/this.#sample.screen_size_px[1]}%`;
 
-    } else this.#previewLabel.textContent = this.#invalid ? "Ripeti la calibrazione per questa finestra" : this.#sample?.status === "no_face" ? "Posizionati davanti alla webcam" : this.#calibration ? "In attesa dello sguardo" : "Calibra per vedere dove guardi";
-    if (this.#last && !this.#fresh() && !["no_face","error"].includes(this.#sample?.status)) this.#status.textContent = "Nessun dato recente";
+    } else this.#previewLabel.textContent = this.#invalid ? Texts.get("gaze.repeatCalibration") : this.#sample?.status === "no_face" ? Texts.get("gaze.faceCamera") : this.#calibration ? Texts.get("gaze.waitingGaze") : Texts.get("gaze.calibratePreview");
+    if (this.#last && !this.#fresh() && !["no_face","error"].includes(this.#sample?.status)) this.#status.textContent = Texts.get("gaze.noRecentData");
   }
   #apply() {
     for (const button of this.#buttons) button.disabled = this.#busy || !this.#alive || this.#released;
     if (this.#calibrateButton) {
       this.#calibrateButton.disabled ||= !this.#fresh();
-      this.#calibrateButton.textContent = `Calibra ${this.#pointCount.value} punti`;
     }
-    this.#pointCount.disabled = this.#busy || !this.#alive || this.#released;
     this.#validateButton.disabled ||= !this.#calibration || this.#invalid || !this.#dimensionsMatch() || !this.#fresh() || this.#sample?.status !== "ok";
     if (this.#toggle) this.#toggle.disabled = this.#busy || !this.#alive || this.#released || (!this.#showPoint && (!this.#calibration || this.#invalid));
   }
@@ -149,7 +131,7 @@ export class ScreenGazePanel {
   #cancel() { this.#cancelled = true; this.#cancelWait?.(); this.#overlay?.remove(); }
   async #command(name, args = {}) {
     const response = await this.#options.send(this.#options.node, name, args);
-    if (response?.status !== true) throw new Error(response?.err || "Comando non riuscito");
+    if (response?.status !== true) throw new Error(response?.err || Texts.get("gaze.commandFailed"));
     return response.val;
   }
   async #run(fn) {
@@ -171,32 +153,32 @@ export class ScreenGazePanel {
     const reports = this.#session.validationResults.filter(report => sameViewport(report.viewport, viewport()));
     this.#results.replaceChildren();
     if (!reports.length) return;
-    this.#results.append(el("strong", "", "Verifica su 9 punti nuovi · pixel CSS"));
+    this.#results.append(el("strong", "", Texts.get("gaze.resultsTitle")));
     const table = el("table"), head = el("tr");
-    for (const label of ["Calibrazione", "Errore medio", "RMSE", "P95"]) head.append(el("th", "", label));
+    for (const label of [Texts.get("gaze.calibration"), Texts.get("gaze.meanError"), "RMSE", "P95"]) head.append(el("th", "", label));
     table.append(head);
     for (const report of [...reports].sort((a, b) => (a.calibration_points ?? 0) - (b.calibration_points ?? 0))) {
       const row = el("tr");
-      for (const value of [report.calibration_points ? `${report.calibration_points} punti` : "Importata", ...[report.mean_error_px, report.rmse_px, report.p95_error_px].map(value => `${value.toFixed(1)} px`)]) row.append(el("td", "", value));
+      for (const value of [report.calibration_points ? Texts.get("gaze.points", { count: report.calibration_points }) : Texts.get("gaze.imported"), ...[report.mean_error_px, report.rmse_px, report.p95_error_px].map(value => `${value.toFixed(1)} px`)]) row.append(el("td", "", value));
       table.append(row);
     }
-    this.#results.append(table, el("p", "gaze-hint", "Ultima verifica per modalità, nella stessa finestra. Valori più bassi sono migliori. Mantieni invariati testa, webcam e postazione; ripeti per confermare."), this.#saveResults);
+    this.#results.append(table, el("p", "gaze-hint", Texts.get("gaze.resultsHint")));
   }
   async #validate() {
-    if (!this.#calibration || this.#invalid || !this.#dimensionsMatch() || !this.#fresh() || this.#sample?.status !== "ok") throw new Error("Calibra questa finestra e posizionati davanti alla webcam.");
+    if (!this.#calibration || this.#invalid || !this.#dimensionsMatch() || !this.#fresh() || this.#sample?.status !== "ok") throw new Error(Texts.get("gaze.prepareValidation"));
     this.#cancelled = false;
     const context = viewport(), revision = this.#session.calibrationRevision;
     const validation = new GazeValidation(context); this.#validation = validation;
     const overlay = el("div", "gaze-calibration"); this.#overlay = overlay;
     overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "Verifica indipendente dello sguardo"); overlay.tabIndex = -1;
-    const dot = el("div", "gaze-target"), text = el("p"), cancel = el("button", "command-run", "Annulla (Esc)");
+    overlay.setAttribute("aria-label", Texts.get("gaze.validationAria")); overlay.tabIndex = -1;
+    const dot = el("div", "gaze-target"), text = el("p"), cancel = el("button", "command-run", Texts.get("gaze.cancel"));
     cancel.type = "button"; cancel.onclick = () => this.#cancel();
     overlay.append(dot, text, cancel); document.body.append(overlay); overlay.focus();
     const check = () => {
-      if (this.#cancelled || this.#released || this.#paused || !this.#alive || document.hidden) throw new Error("Verifica annullata. La calibrazione resta invariata.");
-      if (!sameViewport(context, viewport()) || revision !== this.#session.calibrationRevision) throw new Error("Finestra o calibrazione cambiate: ripeti la verifica.");
-      if (!this.#fresh() || this.#sample?.status !== "ok") throw new Error("Volto perso o dati non recenti: ripeti la verifica.");
+      if (this.#cancelled || this.#released || this.#paused || !this.#alive || document.hidden) throw new Error(Texts.get("gaze.validationCancelled"));
+      if (!sameViewport(context, viewport()) || revision !== this.#session.calibrationRevision) throw new Error(Texts.get("gaze.validationChanged"));
+      if (!this.#fresh() || this.#sample?.status !== "ok") throw new Error(Texts.get("gaze.validationLostFace"));
     };
     const escape = event => { if (event.key === "Escape") { event.preventDefault(); this.#cancel(); } };
     document.addEventListener("keydown", escape);
@@ -204,33 +186,33 @@ export class ScreenGazePanel {
       let count = 0;
       for (const target of validationTargets(context.width, context.height)) {
         check(); dot.style.left = `${target[0]}px`; dot.style.top = `${target[1]}px`;
-        text.textContent = `Verifica ${++count}/9 · Guarda il punto e tieni ferma la testa`;
+        text.textContent = Texts.get("gaze.validationTarget", { count: ++count });
         await new Promise(resolve => requestAnimationFrame(resolve)); check();
         validation.beginTarget(target, performance.now(), this.#sample.source_ts_us);
         await this.#wait(3000); check(); validation.finishTarget();
       }
       const report = validation.result(this.#session.calibrationPoints);
       this.#session.recordValidation(report);
-      this.#message.textContent = `Verifica completata: errore medio ${report.mean_error_px.toFixed(1)} px, RMSE ${report.rmse_px.toFixed(1)} px. La calibrazione non è stata modificata.`;
+      this.#message.textContent = Texts.get("gaze.validationComplete", { mean: report.mean_error_px.toFixed(1), rmse: report.rmse_px.toFixed(1) });
     } finally {
       this.#validation = null; document.removeEventListener("keydown", escape); overlay.remove(); this.#overlay = null;
     }
   }
   async #calibrate() {
-    if (!this.#fresh()) throw new Error("Posizionati davanti alla webcam prima di calibrare.");
-    const targetCount = this.#session.targetCount;
+    if (!this.#fresh()) throw new Error(Texts.get("gaze.prepareCalibration"));
     this.#cancelled = false;
     const overlay = el("div", "gaze-calibration"); this.#overlay = overlay;
     overlay.setAttribute("role", "dialog"); overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "Calibrazione dello sguardo"); overlay.tabIndex = -1;
-    const dot = el("div", "gaze-target"), text = el("p"), cancel = el("button", "command-run", "Annulla (Esc)");
+    overlay.setAttribute("aria-label", Texts.get("gaze.calibrationAria")); overlay.tabIndex = -1;
+    const dot = el("div", "gaze-target"), text = el("p"), cancel = el("button", "command-run", Texts.get("gaze.cancel"));
     cancel.type = "button"; cancel.onclick = () => this.#cancel();
     overlay.append(dot, text, cancel); document.body.append(overlay); overlay.focus();
     const context = viewport(), width = context.width, height = context.height;
+    const targets = calibrationTargets(width, height);
     const check = () => {
-      if (this.#cancelled || !this.#alive || this.#released || this.#paused || document.hidden) throw new Error("Calibrazione annullata. La precedente resta disponibile.");
-      if (!sameViewport(context, viewport())) throw new Error("La finestra è cambiata: ripeti la calibrazione.");
-      if (!this.#fresh()) throw new Error("Volto perso o dati non recenti: riposizionati e ripeti la calibrazione.");
+      if (this.#cancelled || !this.#alive || this.#released || this.#paused || document.hidden) throw new Error(Texts.get("gaze.calibrationCancelled"));
+      if (!sameViewport(context, viewport())) throw new Error(Texts.get("gaze.viewportChanged"));
+      if (!this.#fresh()) throw new Error(Texts.get("gaze.calibrationLostFace"));
     };
     const escape = e => { if (e.key === "Escape") { e.preventDefault(); this.#cancel(); } };
     document.addEventListener("keydown", escape);
@@ -238,18 +220,18 @@ export class ScreenGazePanel {
     try {
       await this.#command("beginCalibration", { screen_w: width, screen_h: height }); started = true;
       let count = 0;
-      for (const [x, y] of calibrationTargets(targetCount, width, height)) {
+      for (const [x, y] of targets) {
         check();
         dot.style.left = `${x}px`; dot.style.top = `${y}px`;
-        text.textContent = `Guarda il punto ${++count}/${targetCount} · Tieni ferma la testa`;
+        text.textContent = Texts.get("gaze.calibrationTarget", { count: ++count, total: targets.length });
         await new Promise(resolve => requestAnimationFrame(resolve)); check();
         await this.#command("calibrationTarget", { x, y }); await this.#wait(3000); check();
         await this.#command("finishTarget");
       }
       check(); const result = await this.#command("fitCalibration");
-      this.#calibration = await this.#command("getCalibration"); this.#session.setCalibration(this.#calibration, context, targetCount);
+      this.#calibration = await this.#command("getCalibration"); this.#session.setCalibration(this.#calibration, context);
       this.#session.setEnabled(true);
-      this.#message.textContent = `Calibrazione completata. Punto attivo nella pagina. Residuo del fit: ${result.fit_residual_px.toFixed(1)} px. Avvia Verifica precisione per misurare su punti nuovi.`;
+      this.#message.textContent = Texts.get("gaze.calibrationComplete", { residual: result.fit_residual_px.toFixed(1) });
       started = false;
     } finally {
       document.removeEventListener("keydown", escape); overlay.remove(); this.#overlay = null;

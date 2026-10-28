@@ -24,7 +24,7 @@ For a working integration, use **the complete contents of this directory**, not 
 
 ## 1. Install into the existing framework
 
-Prerequisites: an N2uCore checkout with `MlDevice`, `MlTicker`, `WorkerFlowInput`, the dynamic node catalogue and Iride. Use the Python environment configured in the **SysInit that will execute the nodes**.
+Prerequisites: an N2uCore checkout with `MlDevice`, `MlTicker`, `WorkerFlowInput`, the dynamic node catalogue and Iride. Its existing `memprovider.py` must already expose `resolveComputeResources()` and `releaseComputeCache()`. Framework ML changes are a separate prerequisite and are not included or installed by this Eye Gaze package. Use the Python environment configured in the **SysInit that will execute the nodes**.
 
 From the root of the `eyegaze-inference` repository, with the pipeline stopped:
 
@@ -63,11 +63,11 @@ GazeDirection.GazeDirection → ScreenPointOfGaze.GazeDirection
 
 Import the [portable pipeline](examples/eyegaze/gazedino.iride.json), select the correct SysInit and verify the webcam ID **on the computer executing WebCam**. The ID depends on device enumeration on that machine.
 
-The direction node uses fixed defaults: the minimal joblib above, automatic CUDA/MPS/CPU selection, a maximum of 15 inference frames per second, EMA alpha 0.25 and a 600-second idle unload. The screen node accepts input captured within 2 seconds and always starts uncalibrated. Neither node exposes additional configuration fields.
+The direction node uses the fixed minimal joblib above, EMA alpha 0.25 and a 600-second idle unload. Its two standard settings are the maximum inference FPS (1–120, default 15) and Expert compute device (`auto` or `cpu`). Automatic selection uses the engine’s declared CUDA/XPU/MPS/CPU capability order. The screen node accepts input captured within 2 seconds, always starts uncalibrated and has no configuration fields.
 
 After installation, restart services using the device’s normal procedure, with the pipeline stopped, and reload Iride without cache. Then start the pipeline.
 
-Open Gaze Direction to see the video, face box, eye markers and gaze arrows; technical details are collapsible. Open Screen Point of Gaze and select **16 or 32 points**, then start calibration. To use the whole monitor, enter fullscreen first and calibrate in that mode.
+Open Gaze Direction to see the video, face box, eye markers and gaze arrows; technical details are collapsible. Open Screen Point of Gaze and choose **Calibrate 16 points** to run the single standard calibration. To use the whole monitor, enter fullscreen first and calibrate in that mode.
 
 The **Show point on page** checkbox belongs to the pipeline session: closing, hiding or minimizing the card leaves the dot active; reopening it restores the selected checkbox. Unchecking it hides the dot. Stopping the pipeline clears the session. Missing faces, stale data, disconnections and a hidden page temporarily hide the dot without changing the preference. Changes to window size, window position or display density require recalibration.
 
@@ -106,6 +106,12 @@ tools/export_eyegaze.py                  Original checkpoint exporter
 tools/verify_eyegaze_iride.py            Full transport integration test
 ```
 
+**Compute device** is the existing framework `device` property, shown at Iride's Expert level as a standard string `ENUM`: `auto` (default) or `cpu`. Select `cpu` to force this model onto CPU even when a GPU is available; the value is saved in the pipeline and applies at the next Start. Normal schema defaults keep older pipelines working. Eye Gaze uses no custom `optional` metadata or validation bypass. The installer removes only the custom text-field and UI extensions introduced by earlier gaze integration work, while restoring or preserving the framework's original optional-list validation and empty-subnodes rule for standalone agents. Screen Point of Gaze is already CPU-only and has no redundant device setting.
+
+Memory handling follows the framework provider contract used by PhysioDOM ML. The shared `resolveComputeResources()` function selects a compute device and matching memory provider. Gaze Direction and the standalone GazeDINO engine declare CUDA/XPU/MPS/CPU capabilities. The node passes the selected provider and device, fixed model resource and idle timeout into `EyeGazeTicker`; model loading remains on the ML thread. CUDA and AMD ROCm use `CudaMemoryProvider`, Intel XPU uses `AcceleratorMemoryProvider`, and CPU/Apple MPS use `SystemMemoryProvider`. Cache release uses the common `releaseComputeCache()` helper. Physical CPU/MPS inference is verified; other accelerators have simulated coverage and need hardware validation.
+
+The shared memory implementation belongs to the destination framework at `N2uCore/dyn/wrk/memprovider.py`. This installer checks that the required resource functions exist and never replaces that file. The schema-aware `lib/render/decoders/gaze-decoder.js` source is also guarded by a known-source fingerprint; the worker receives a small hook for raw GAZE card sessions. Before replacing it, the installer checks the target against known source fingerprints or the exact installed version. Iride hooks target the current Card/CardBoard lifecycle. Unknown source changes stop preflight without writes. Shared resource handling uses native or general PyTorch memory APIs; unavailable backends or unreadable memory allow automatic CPU fallback, while genuine low memory still blocks model loading through the unchanged `MlDevice`/`MlTicker` guard. `SystemMemoryProvider` reads psutil directly across operating systems. CPU-only callers do not import Torch through the resource helpers. Model weights and physiological buffers are unchanged. Runtime failures return logged neutral results; the node and ticker check these outcomes. Screen Point uses one inherited start and estimates clock offset from monotonic arrivals for calibration and freshness. See [runtime and clock contracts](docs/eyegaze-node-review.md#runtime-failure-and-clock-contracts) for details and limits.
+
 Gaze Direction follows the **`MlDevice` / `MlTicker`** pattern: decoding, face detection and PyTorch inference run on the ML thread, with one frame in flight and obsolete frames dropped. The joblib format does not turn the network into a tabular model. Screen Point of Gaze uses **`SwDevice`** and NumPy; it does not load the neural network. Iride communicates only with **uinode**, using the framework’s WebSocket channels; nodes communicate through Flow.
 
 The engine is `GazeDinoEngine(object)` in `gazedinoengine.py`. A standard PyTorch `Sequential` composes the existing backbone and head; there is no nested network subclass. Checkpoint keys remain `backbone.*` and `head.*`. Internal instance state uses underscore-prefixed camelCase names, dependencies are declared explicitly at module scope, as in the framework’s voice node. Node and ticker construction do not load weights or create a face tracker; both are created by the ML ticker’s model-load hook. Existing snake_case JSON field names are retained as the channel protocol, not Python variable names.
@@ -142,29 +148,42 @@ The exporter reads the generated file back and compares every weight against the
 - **Historical full Mac mini integration test (before the local session-only calibration revision)** using a test video: WebSocket → uinode → sysinit → WebCam → Gaze Direction/MlTicker → Screen Point of Gaze → WebSocket, including projection checks and shutdown to IDLE. [Test report](examples/eyegaze/minimal-node-integration-test.json).
 - Verified environment: Python 3.11, MediaPipe 0.10.21, NumPy 1.26.4 and MPS. Select torch/torchvision builds suited to the target hardware. Windows and Linux have not yet been certified through equivalent tests.
 
-The file reduction removes training state; the network remains DINOv2 ViT-B/14. It is not evidence of a lower computational cost. A Mac mini M1 benchmark measured approximately 100–150 ms per full analysis; the fixed 15 FPS limit is a ceiling. Export parity is not a new accuracy validation: pointing accuracy must be checked with the actual person and monitor, using targets excluded from calibration.
+The file reduction removes training state; the network remains DINOv2 ViT-B/14. It is not evidence of a lower computational cost. A Mac mini M1 benchmark measured approximately 100–150 ms per full analysis; the configurable maximum inference FPS setting (default 15) is a ceiling. Export parity is not a new accuracy validation: pointing accuracy must be checked with the actual person and monitor, using targets excluded from calibration.
 
 To repeat the checks, run from the **N2uCore checkout root** in its Python environment:
 
 ```sh
 python -m pip install -r /path/to/eyegaze-inference/integrations/n2ucore/requirements-dev.txt
 python -m pytest tests/dyn/test_gazeartifact.py tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py -q
+python -m pytest tests/dyn/wrk/test_accelerator_memory.py tests/dyn/wrk/test_compute_resources.py tests/dyn/wrk/test_memprovider_portability.py tests/dyn/wrk/test_memprovider.py tests/dyn/wrk/test_mldevice.py tests/dyn/test_eyegaze.py -q
 node --test tests/web/gaze-direction-panel.test.mjs tests/web/gaze-calibration.test.mjs tests/web/screen-gaze-panel.test.mjs tests/web/optional-gaze-fields.test.mjs
 python tools/verify_eyegaze_iride.py --fixture /path/to/face.png
 ```
 
 The full test repeats a public image in a test video and does not require a physical webcam. Test dependencies are separate from runtime dependencies.
 
-## Comparing 16 and 32 calibration points
+## Checking calibration accuracy
 
 1. Keep the same camera, monitor, browser viewport and seating position. Enter fullscreen before starting if you intend to use fullscreen.
-2. Choose **16 points**, calibrate (about 48 s), then run **Verify accuracy (9 points)** (about 27 s). Follow each new target without moving your head.
-3. Choose **32 points**, calibrate (about 96 s), then repeat the same nine-point verification. The successful second fit replaces the first; validation reports for both modes remain available in the current session.
-4. Compare the two rows in the card. A lower mean error and RMSE indicate better pointing on these held-out targets. Repeat both modes, preferably reversing their order, to check that any improvement is consistent.
-5. Use **Save results** to export the validation report as JSON. Results are kept for the pipeline session, including while the card is closed; stopping the pipeline clears them. Starting a new node process requires a new calibration.
+2. Use **Calibrate 16 points** (about 48 s). This is the only calibration mode: a fixed 4×4 grid. The backend requires all 16 completed targets and rejects additional targets.
+3. Run **Verify accuracy (9 points)** (about 27 s). Follow each new target without moving your head. This checks the existing calibration without fitting another one.
+4. Read mean error, RMSE and P95 in the card. Lower values indicate better pointing on these held-out targets. Repeat verification with the same setup to check consistency.
 
-Calibration covers a 4×4 or 8×4 grid over the same area. Verification uses a separate 3×3 grid that does not overlap either calibration grid. It never refits the calibration. The first second at each verification target is discarded; only unique, valid, timestamped samples captured after settling count, with at least three observations per target and a bound of 128.
+The latest verification stays in memory for the current calibration and viewport, including while the card is closed. A new calibration or stopping the pipeline clears the report. Calibration coefficients are held only in the node process. There are no import/export controls or downloads for calibrations or validation reports.
 
-The report records viewport geometry, calibration mode, date, per-target sample counts and errors, overall mean Euclidean error, RMSE, median and P95. Units are **CSS pixels within the browser viewport**, not physical display pixels or degrees. Mean and RMSE weight the nine targets equally; median and P95 use all accepted samples. The page dot is hidden during verification to avoid visual feedback affecting fixation and returns to its previous enabled state afterward. Cancelling, losing fresh face data or changing geometry aborts the test without saving a partial result or changing the calibration.
+Verification uses a separate 3×3 grid that does not overlap the calibration grid. The first second at each verification target is discarded; only unique, valid, timestamped samples captured after settling count, with at least three observations per target and a bound of 128.
 
-This is a practical within-session comparison. It does not guarantee that 32 points will outperform 16 or establish accuracy on unseen users.
+The report records viewport geometry, calibration point count, date, per-target sample counts and errors, overall mean Euclidean error, RMSE, median and P95. Units are **CSS pixels within the browser viewport**, not physical display pixels or degrees. Mean and RMSE weight the nine targets equally; median and P95 use all accepted samples. The page dot is hidden during verification to avoid visual feedback affecting fixation and returns to its previous enabled state afterward. Cancelling, losing fresh face data or changing geometry aborts the test without saving a partial result or changing the calibration. This check does not establish accuracy on unseen users.
+
+## Inference rate and gaze channels
+
+**Maximum inference FPS** (`maxFps`) is a standard integer setting from 1 to 120, defaulting to 15. It limits dispatch of fresh frames, keeps one inference in flight and drops excess input. It is not a 60 ms timer. Actual throughput also depends on the camera and model. The model resource remains fixed. For guided calibration, start with at least 5 FPS; the current three-sample collection window cannot be filled at 1 FPS.
+
+Both `GazeDirection` and `ScreenPoint` use the existing `GAZE` channel type, following Tobii Glasses. Their distinct JSON schemas retain angle versus browser-pixel semantics and do not fabricate Tobii pupil data or normalized scene gaze. Install the node, catalogue, decoder and worker changes together, restart the affected pipeline and reload Iride. Existing pipeline edges retain the same channel names; missing `maxFps` values receive the normal schema default. External consumers must dispatch by schema instead of assuming every GAZE payload is Tobii data.
+
+See [the node review and Marco frontend handoff](docs/eyegaze-node-review.md) for source paths, compatibility checks and local CPU/MPS measurements. Benchmark tool: `tools/benchmark_eyegaze.py`; raw reports: `examples/eyegaze/benchmarks/`. This work is local only. Live GPU-to-CPU recovery and multi-model scheduling are deferred.
+
+The gaze panels use the framework’s existing button, input and toggle classes, inherited fonts, central `Texts` EN/IT tables and theme tokens. The installer adds gaze translation entries to the existing app language tables; it does not replace those tables. The user will coordinate frontend review with Marco later.
+
+
+Screen Point emits the existing GAZE JSON fields: normalized viewport gaze2d plus eyeleft/eyeright pupildiameter set to null. The existing framework gaze converter reads these coordinates without changes. Screen pixel fields and the session/page UI remain available. The normalized coordinates refer to the calibrated browser viewport; pupil measurements and scene-camera coordinates are not inferred. Gaze Direction keeps its angular schema. See docs/eyegaze-node-review.md for compatibility tests, checklist status and the latest Mac measurement.

@@ -43,10 +43,9 @@ def test_cancel_keeps_current_session_calibration_and_import_commands_are_absent
     assert n._cal.calibration()==CAL and not n._cal.status()['collecting']
     assert not hasattr(n,'setCalibration') and not hasattr(n,'clearCalibration')
 
-@pytest.mark.parametrize("columns", [4, 8])
-def test_guided_fit_16_or_32_targets_and_projection(columns):
+def test_guided_fit_16_targets_and_projection():
     c=ScreenCalibration();c.begin(1000,600)
-    for i,x in enumerate(np.linspace(-.3,.3,columns)):
+    for i,x in enumerate(np.linspace(-.3,.3,4)):
         for j,y in enumerate(np.linspace(-.2,.2,4)):
             c.target(500+1000*x,300+1000*y,0,0)
             for k in range(6):c.feed(x,y,1+k*.2,1000000+k*200000)
@@ -60,14 +59,14 @@ def test_guided_fit_16_or_32_targets_and_projection(columns):
 def test_degenerate_fit_keeps_old_calibration():
     c=ScreenCalibration();c._calibration=CAL;c.begin(1000,600)
     c._targets=[[.1,.1,10+i,20+i] for i in range(16)]
-    with pytest.raises(ValueError):c.fit()
+    assert c.fit() is None
     assert c._calibration==CAL
 
 def test_target_requires_new_samples_after_settling():
     c=ScreenCalibration();c.begin(1000,600);c.target(500,300,0,1000000)
     c.feed(.1,.2,.1,1100000) # before settling
     c.feed(.1,.2,1.2,1100000) # arrived late but captured before target settled
-    with pytest.raises(ValueError):c.finishTarget()
+    assert c.finishTarget() is None
     assert c._targets==[]
 
 def test_screen_node_has_no_model_dependency():
@@ -87,9 +86,16 @@ def test_registered_command_schemas_accept_real_payloads():
         assert v.validate(args),name
 
 
-def test_calibration_has_a_bounded_32_target_limit():
+def test_calibration_has_a_bounded_16_target_limit():
     c=ScreenCalibration();c.begin(1000,600)
-    c._targets=[[.1,.1,10+i,20+i] for i in range(32)]
-    with pytest.raises(ValueError,match='Maximum 32'):
-        c.target(500,300,0,0)
-    assert len(c._targets)==32
+    c._targets=[[.1,.1,10+i,20+i] for i in range(16)]
+    assert c.target(500,300,0,0) is None
+    assert len(c._targets)==16
+
+
+@pytest.mark.parametrize("count", [10, 15, 17, 32])
+def test_fit_requires_exactly_16_completed_targets_and_preserves_current_fit(count):
+    c=ScreenCalibration();c._calibration=CAL;c.begin(1000,600)
+    c._targets=[[.1,.1,10+i,20+i] for i in range(count)]
+    assert c.fit() is None
+    assert c._calibration==CAL

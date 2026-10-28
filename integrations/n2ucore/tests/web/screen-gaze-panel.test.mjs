@@ -58,7 +58,7 @@ test('closing and reopening a card preserves the page point and selected checkbo
  const h=persistentSetup();let a,b;
  try{a=h.mount();await new Promise(r=>setImmediate(r));h.emit(point);a.toggle.checked=true;a.toggle.events.change();const dot=h.dot();assert(!dot.hidden);
  a.panel.release();assert.equal(h.env.views.size,1);h.emit({...point,screen_xy_px:[750,400]});assert(!dot.hidden);assert.equal(dot.style.left,'750px');
- b=h.mount();await new Promise(r=>setImmediate(r));assert(b.toggle.checked);assert.equal(h.loads(),1);assert.equal(h.env.views.size,1);assert.equal(document.body.children.filter(c=>c.className==='gaze-page-dot').length,1);
+ b=h.mount();await new Promise(r=>setImmediate(r));assert.equal(descendants(b.root,'select').length,0);assert(find(b.root,'Calibra 16 punti'));assert(b.toggle.checked);assert.equal(h.loads(),1);assert.equal(h.env.views.size,1);assert.equal(document.body.children.filter(c=>c.className==='gaze-page-dot').length,1);
  b.toggle.checked=false;b.toggle.events.change();assert(dot.hidden);b.panel.release();assert.equal(h.env.views.size,0);
  }finally{a?.panel.release();b?.panel.release();h.close();}
 });
@@ -79,12 +79,6 @@ test('stopping the pipeline clears closed-card sessions and the next run starts 
  b=h.mount();assert(!b.toggle.checked);await new Promise(r=>setImmediate(r));assert.equal(h.loads(),2);
  }finally{a?.panel.release();b?.panel.release();h.close();}
 });
-test('32-point mode sends all 32 targets and persists its choice and fit size',async()=>{
- const calls=[];const h=setup(async(node,cmd,args)=>{calls.push({cmd,args});return {status:true,val:cmd==='fitCalibration'?{fit_residual_px:2}:cmd==='getCalibration'?calibration:null};});
- try{const select=descendants(h.root,'select')[0];select.value='32';select.events.change();find(h.root,'Calibra 32 punti').click();await until(()=>calls.some(c=>c.cmd==='getCalibration'));await new Promise(r=>setImmediate(r));
- assert.equal(calls.filter(c=>c.cmd==='calibrationTarget').length,32);assert.equal(calls.filter(c=>c.cmd==='finishTarget').length,32);assert.equal(select.value,'32');
- }finally{h.close();}
-});
 test('independent validation measures nine new targets without calibration commands and restores the dot',async()=>{
  const calls=[];const h=setup(async(_node,cmd)=>{calls.push(cmd);return {status:true,val:cmd==='getCalibration'?calibration:null};});
  const oldPerformance=globalThis.performance,oldTimeout=globalThis.setTimeout;let clock=100,ts=1000000;
@@ -95,7 +89,7 @@ test('independent validation measures nine new targets without calibration comma
    for(let i=0;i<3;i++){clock=start+1200+i*200;ts+=1200000;h.panel.update({...point,screen_xy_px:[x+3,y+4],source_ts_us:ts});}}
   fn();},ms===3000?0:ms);
  find(h.root,'Verifica precisione (9 punti)').click();await until(()=>descendants(h.root,'td').length===4);await new Promise(r=>setImmediate(r));
- assert.equal(descendants(h.root,'td')[1].textContent,'5.0 px');assert(!calls.some(cmd=>cmd!=='getCalibration'));assert(toggle.checked);assert(!document.body.children.find(c=>c.className==='gaze-page-dot').hidden);
+ assert.equal(find(h.root,'Salva risultati'),null);assert.equal(descendants(h.root,'a').length,0);assert.equal(descendants(h.root,'td')[0].textContent,'16 punti');assert.equal(descendants(h.root,'td')[1].textContent,'5.0 px');assert(!calls.some(cmd=>cmd!=='getCalibration'));assert(toggle.checked);assert(!document.body.children.find(c=>c.className==='gaze-page-dot').hidden);
  }finally{globalThis.performance=oldPerformance;globalThis.setTimeout=oldTimeout;h.close();}
 });
 test('cancelling validation saves no partial report and never changes calibration',async()=>{
@@ -112,6 +106,9 @@ test('screen card has no saved-calibration file controls',()=>{
  const h=setup(async()=>({status:true,val:null}));
  try {
   assert.equal(descendants(h.root,'input').filter(input=>input.type==='file').length,0);
+  assert.equal(descendants(h.root,'select').length,0);
+  assert.equal(find(h.root,'Salva risultati'),null);
+  assert.equal(find(h.root,'Calibra 32 punti'),null);
   const labels=descendants(h.root,'button').map(button=>button.textContent);
   assert(!labels.includes('Carica calibrazione') && !labels.includes('Salva calibrazione'));
  } finally {h.close();}

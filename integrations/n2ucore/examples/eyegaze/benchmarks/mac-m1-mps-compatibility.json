@@ -1,0 +1,38 @@
+{
+  "machine": "arm64",
+  "os": "macOS-26.5.1-arm64-arm-64bit",
+  "processor": "arm",
+  "torch": "2.14.1",
+  "device": "mps",
+  "logical_cpus": 8,
+  "system_ram_bytes": 17179869184,
+  "image_sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+  "image_size_px": [
+    512,
+    512
+  ],
+  "frames": 30,
+  "warmup_frames": 5,
+  "max_fps": null,
+  "load_seconds": 3.759000374993775,
+  "elapsed_seconds": 2.0262590420315973,
+  "achieved_fps": 14.805609439709626,
+  "analysis_ms": {
+    "mean": 67.52534845727496,
+    "p50": 65.20672896294855,
+    "p95": 80.78736858442426
+  },
+  "cpu_percent_one_core": 11.600983838883451,
+  "rss_baseline_bytes": 358825984,
+  "rss_loaded_bytes": 806486016,
+  "rss_peak_bytes": 1044332544,
+  "rss_peak_delta_bytes": 685506560,
+  "mps_peak_bytes": {
+    "tensor_bytes": 352506624,
+    "driver_bytes": 380010496
+  },
+  "statuses": {
+    "ok": 30
+  },
+  "scope": "Full engine analysis of a repeated RGB image; excludes camera, video encoding, Flow transport and browser. MPS uses unified RAM; do not add its counters to RSS. No power measurement."
+}

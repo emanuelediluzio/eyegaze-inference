@@ -4,7 +4,7 @@ import { el, GazeStream, viewport, sameViewport, validPoint } from "./gaze-ui.js
 export class ScreenGazeSession {
   sample = null; last = 0; calibration = null; geometry = null;
   invalid = false; enabled = false; alive;
-  targetCount = 16; calibrationPoints = null; calibrationRevision = 0; validationResults = [];
+  calibrationPoints = null; calibrationRevision = 0; validationResults = [];
   #dot; #stream; #timer; #listeners = new Set(); #released = false;
   #suppressed = false; #loading = null; #initialized = false; #visibility; #resize;
   constructor(options) {
@@ -33,15 +33,16 @@ export class ScreenGazeSession {
     }).finally(() => { this.#loading = null; });
     return this.#loading;
   }
-  setCalibration(value, geometry = viewport(), pointCount = null) {
+  setCalibration(value, geometry = viewport()) {
     if (this.#released) return;
     this.#initialized = true; this.calibration = value; this.geometry = geometry;
-    this.calibrationPoints = pointCount; this.calibrationRevision++;
+    this.calibrationPoints = value ? 16 : null; this.calibrationRevision++;
+    this.validationResults = [];
     this.invalid = !!value && !this.dimensionsMatch(); this.#paint(); this.#notify();
   }
   recordValidation(report) {
     if (this.#released) return;
-    this.validationResults = [...this.validationResults.filter(value => value.calibration_points !== report.calibration_points), report].slice(-3);
+    this.validationResults = [report];
     this.#notify();
   }
   setEnabled(enabled) {

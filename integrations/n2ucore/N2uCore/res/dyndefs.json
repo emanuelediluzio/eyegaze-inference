@@ -4,8 +4,24 @@
     "module": "N2uCore.dyn.eyegaze",
     "class": "GazeDirection",
     "label": "Gaze Direction",
-    "description": "RGB face to gaze yaw/pitch, landmark-derived head roll and unit 3D gaze vector. Fixed GazeDINO model, automatic compute device, up to 15 FPS.",
-    "PROPS_SCHEMA": {},
+    "description": "RGB face to gaze yaw/pitch, landmark-derived head roll and unit 3D gaze vector. Fixed GazeDINO model, automatic or CPU compute device and configurable maximum inference FPS.",
+    "PROPS_SCHEMA": {
+      "device": {
+        "type": "ENUM",
+        "itemType": "STR",
+        "values": [
+          "auto",
+          "cpu"
+        ],
+        "default": "auto"
+      },
+      "maxFps": {
+        "type": "INT",
+        "min": 1,
+        "max": 120,
+        "default": 15
+      }
+    },
     "inputs": [
       {
         "name": "VideoStream",
@@ -15,7 +31,7 @@
     "outputs": [
       {
         "name": "GazeDirection",
-        "type": "TEXT"
+        "type": "GAZE"
       }
     ],
     "commands": {}
@@ -30,25 +46,27 @@
     "inputs": [
       {
         "name": "GazeDirection",
-        "type": "TEXT"
+        "type": "GAZE"
       }
     ],
     "outputs": [
       {
         "name": "ScreenPoint",
-        "type": "TEXT"
+        "type": "GAZE"
       }
     ],
     "commands": {
       "calibrationStatus": {
         "name": "calibrationStatus",
         "label": "calibrationStatus",
-        "args": {}
+        "args": {},
+        "description": "Return whether this session is calibrated and collecting a target."
       },
       "getCalibration": {
         "name": "getCalibration",
         "label": "getCalibration",
-        "args": {}
+        "args": {},
+        "description": "Return the current session calibration, or null when uncalibrated."
       },
       "beginCalibration": {
         "name": "beginCalibration",
@@ -62,7 +80,8 @@
             "type": "INT",
             "min": 2
           }
-        }
+        },
+        "description": "Begin a session fit for the given browser dimensions in CSS pixels."
       },
       "calibrationTarget": {
         "name": "calibrationTarget",
@@ -76,22 +95,26 @@
             "type": "FLOAT",
             "min": 0
           }
-        }
+        },
+        "description": "Collect a target at browser coordinates x/y using fresh gaze samples."
       },
       "finishTarget": {
         "name": "finishTarget",
         "label": "finishTarget",
-        "args": {}
+        "args": {},
+        "description": "Finish the active target after settling; reject insufficient fresh samples."
       },
       "fitCalibration": {
         "name": "fitCalibration",
         "label": "fitCalibration",
-        "args": {}
+        "args": {},
+        "description": "Fit completed targets and replace the session calibration only on success."
       },
       "cancelCalibration": {
         "name": "cancelCalibration",
         "label": "cancelCalibration",
-        "args": {}
+        "args": {},
+        "description": "Cancel target collection while preserving the previous session calibration."
       }
     }
   }

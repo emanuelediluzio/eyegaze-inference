@@ -1,6 +1,9 @@
 """Install the gaze overlay into an existing N2uCore checkout (Python 3.10+)."""
 import argparse
+import ast
+import hashlib
 import json
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -8,6 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 IRIDE = 'N2uCore/res/web/iride/'
 MERGED = ['N2uCore/res/dyndefs.json', IRIDE + 'schema-ui.json']
+FRAMEWORK_SOURCES = {
+    'N2uCore/res/web/iride/lib/render/decoders/gaze-decoder.js': (
+        '5af93e008197a40de92403b6bc1e48eba24c0fcf9dcbe5293555cba20c869fca',
+        '0101aa2b77bcc4ef087bfc490cbb99f98c58060380554789e6f571f77731a808',
+    ),
+}
 
 
 def edit_once(text, before, after, filename):
@@ -23,12 +32,26 @@ def edit_once(text, before, after, filename):
 def plan(target):
     if not (target / 'N2uCore/dyn/wrk/mldevice.py').is_file():
         raise ValueError('Target must be an existing N2uCore checkout with MlDevice/MlTicker')
+    provider = target / 'N2uCore/dyn/wrk/memprovider.py'
+    if not provider.is_file():
+        raise ValueError('Update the framework ML resource API before installing Eye Gaze')
+    functions = {node.name for node in ast.parse(provider.read_text(encoding='utf-8')).body
+                 if isinstance(node, ast.FunctionDef)}
+    if not {'resolveComputeResources', 'releaseComputeCache'} <= functions:
+        raise ValueError('Framework memprovider.py must provide resolveComputeResources and releaseComputeCache; framework ML changes are distributed separately')
+    for rel, fingerprints in FRAMEWORK_SOURCES.items():
+        current = (target / rel).read_text(encoding='utf-8')
+        incoming = (ROOT / rel).read_text(encoding='utf-8')
+        if current != incoming and hashlib.sha256(current.encode()).hexdigest() not in fingerprints:
+            raise ValueError(f'{rel}: unknown framework source; review the integration manually')
     changes = {}
-    for folder in ['N2uCore', 'examples', 'tests', 'tools']:
+    for folder in ['N2uCore', 'examples', 'tests', 'tools', 'docs']:
         for source in sorted((ROOT / folder).rglob('*')):
             if not source.is_file() or '__pycache__' in source.parts:
                 continue
             rel = source.relative_to(ROOT).as_posix()
+            if rel == 'N2uCore/dyn/wrk/memprovider.py' or rel.startswith('tests/dyn/wrk/'):
+                continue
             if rel in MERGED:
                 current = json.loads((target / rel).read_text(encoding='utf-8'))
                 extra = json.loads(source.read_text(encoding='utf-8'))
@@ -53,6 +76,13 @@ def plan(target):
     for rel, replacements in edits.items():
         text = (target / rel).read_text(encoding='utf-8')
         for before, after in replacements:
+            if rel.startswith(IRIDE + 'app/texts/') and isinstance(before, str) and before.startswith('export const '):
+                keys = re.findall(r'^\s*"(gaze\.[^"]+)"\s*:', after, re.MULTILINE)
+                counts = [len(re.findall(r'^\s*"' + re.escape(key) + r'"\s*:', text, re.MULTILINE)) for key in keys]
+                if keys and all(count == 1 for count in counts):
+                    continue
+                if any(counts):
+                    raise ValueError(f'{rel}: partial or duplicated gaze translations; review manually')
             # Imports/registrations may already be present alongside other panels.
             if rel.endswith('node-panels.js') and after.splitlines()[-1 if before.startswith('static') else 0].strip() in text:
                 continue

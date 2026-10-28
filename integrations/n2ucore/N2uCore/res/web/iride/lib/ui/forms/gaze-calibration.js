@@ -1,9 +1,9 @@
+import { Texts } from "../../core/texts.js";
 import { validPoint } from "./gaze-ui.js";
 
-export function calibrationTargets(count, width, height) {
-  if (![16, 32].includes(count)) throw new Error("Unsupported calibration size");
-  const columns = count === 32 ? 8 : 4;
-  return Array.from({ length: count }, (_, i) => [
+export function calibrationTargets(width, height) {
+  const columns = 4;
+  return Array.from({ length: 16 }, (_, i) => [
     Math.round(width * (.08 + .84 * (i % columns) / (columns - 1))),
     Math.round(height * [.08, .37, .63, .92][Math.floor(i / columns)])
   ]);
@@ -23,7 +23,7 @@ export class GazeValidation {
   #size; #active = null; #targets = [];
   constructor(size) { this.#size = size; }
   beginTarget(target, now, sourceAfterUs) {
-    if (!Number.isSafeInteger(sourceAfterUs)) throw new Error("Timestamp dello sguardo non disponibile.");
+    if (!Number.isSafeInteger(sourceAfterUs)) throw new Error(Texts.get("gaze.validationTimestampMissing"));
     this.#active = { target, started: now, sourceAfterUs, latest: sourceAfterUs, errors: [] };
   }
   observe(sample, now) {
@@ -36,11 +36,11 @@ export class GazeValidation {
   }
   finishTarget() {
     const active = this.#active;
-    if (!active || active.errors.length < 3) throw new Error("Servono almeno 3 misure fresche per punto. Ripeti la verifica.");
+    if (!active || active.errors.length < 3) throw new Error(Texts.get("gaze.validationSamplesMissing"));
     this.#targets.push(active); this.#active = null;
   }
   result(calibrationPoints) {
-    if (this.#active || this.#targets.length !== 9) throw new Error("Completa tutti i 9 punti di verifica.");
+    if (this.#active || this.#targets.length !== 9) throw new Error(Texts.get("gaze.validationTargetsMissing"));
     const targets = this.#targets.map(({ target, errors }) => ({
       target_px: target, samples: errors.length,
       mean_error_px: errors.reduce((a, b) => a + b, 0) / errors.length,

@@ -13,7 +13,10 @@ def main():
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    print(json.dumps(exportInference(args.source, args.output), indent=2))
+    report = exportInference(args.source, args.output)
+    if report is None:
+        parser.exit(1, "GazeDINO export failed; source or destination is invalid.\n")
+    print(json.dumps(report, indent=2))
 
 
 if __name__ == '__main__':

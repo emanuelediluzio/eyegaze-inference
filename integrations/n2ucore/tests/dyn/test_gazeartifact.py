@@ -32,7 +32,7 @@ def test_export_excludes_training_state_and_preserves_outputs_exactly(tmp_path):
 
 def test_export_never_overwrites_an_existing_artifact(tmp_path):
     source = checkpoint(tmp_path); output = tmp_path/'model.joblib';output.write_bytes(b'keep')
-    with pytest.raises(FileExistsError): exportInference(source, output)
+    assert exportInference(source, output) is None
     assert output.read_bytes() == b'keep'
 
 
@@ -41,8 +41,8 @@ def test_incompatible_or_nonfinite_artifacts_are_rejected(tmp_path):
     original = joblib.load(output)
     for field,value in [('format','other'),('preprocessing',{}),('architecture',{}),('output',{}),('metadata',{})]:
         invalid=copy.deepcopy(original);invalid[field]=value
-        with pytest.raises(ValueError):validateArtifact(invalid)
+        assert validateArtifact(invalid) is None
     invalid=copy.deepcopy(original);invalid['state_dict']['head.bias'][0]=np.nan
-    with pytest.raises(ValueError):validateArtifact(invalid)
+    assert validateArtifact(invalid) is None
     invalid=copy.deepcopy(original);invalid['optimizer']={}
-    with pytest.raises(ValueError):validateArtifact(invalid)
+    assert validateArtifact(invalid) is None

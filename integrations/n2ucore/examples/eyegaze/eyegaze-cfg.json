@@ -2,7 +2,10 @@
   "module": "N2uCore.dyn.eyegaze",
   "class": "GazeDirection",
   "name": "GazeDino",
-  "props": {},
+  "props": {
+    "device": "auto",
+    "maxFps": 15
+  },
   "network": {
     "ssl": {
       "enabled": false,

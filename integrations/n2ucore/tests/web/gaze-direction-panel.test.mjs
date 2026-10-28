@@ -35,3 +35,22 @@ test('direction card labels landmark head roll separately from model angles',()=
  panel.update({...direction,status:'no_face',roll_deg:null});assert.equal(descendants(root,'dd')[2].textContent,'—');
  }finally{panel.release();env.restore();}
 });
+
+test('gaze panels use the framework language tables and shared form controls', async () => {
+ const {Texts}=await import('../../N2uCore/res/web/iride/lib/core/texts.js');
+ const {ScreenGazePanel}=await import('../../N2uCore/res/web/iride/lib/ui/forms/screen-gaze-panel.js');
+ const env=environment();Texts.setLanguage('en');
+ const directionPanel=new GazeDirectionPanel({node:{settings:{name:'Gaze'}},renderer:env.renderer});
+ const screenPanel=new ScreenGazePanel({node:{settings:{name:'Screen'}},renderer:env.renderer,send:async()=>({status:true,val:null})});
+ const directionRoot=new Element('root'),screenRoot=new Element('root');
+ try {
+  directionPanel.render(directionRoot);screenPanel.render(screenRoot);
+  assert(descendants(directionRoot,'strong').some(node=>node.textContent==='Gaze direction'));
+  assert(descendants(directionRoot,'dt').some(node=>node.textContent==='Head tilt · roll'));
+  assert(descendants(screenRoot,'button').some(node=>node.textContent==='Calibrate 16 points'));
+  assert(descendants(screenRoot,'button').every(node=>node.className==='command-run'));
+  assert.equal(descendants(screenRoot,'select').length,0);
+  assert(descendants(directionRoot,'input').every(node=>node.parentElement.className==='field'));
+  assert.equal(Texts.get('gaze.calibrationTarget',{count:3,total:16}),'Look at point 3/16 · Keep your head still');
+ } finally {directionPanel.release();screenPanel.release();env.restore();}
+});

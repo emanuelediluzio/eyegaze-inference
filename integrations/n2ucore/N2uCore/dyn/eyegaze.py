@@ -2,10 +2,9 @@ import copy
 import json
 import time
 
-import psutil
-import torch
-
-from N2uCore.dyn.wrk.mldevice import MlDevice, MlTicker, MemoryProvider
+from N2uCore import fs
+from N2uCore.dyn.wrk.mldevice import MlDevice, MlTicker
+from N2uCore.dyn.wrk.memprovider import resolveComputeResources
 from N2uCore.dyn.wrk.input import WorkerFlowInput
 from N2uCore.miniflow.channel import FlowChannelType
 from N2uCore.miniflow.proto import FlowEvent, FlowResource
@@ -15,18 +14,11 @@ from N2uCore.multimedia.imgdec import ImageDecoder
 from N2uCore.inference.gazedinoengine import GazeDinoEngine
 
 
-class GazeMemoryProvider(MemoryProvider):
-    def available(self):
-        if torch.cuda.is_available():
-            free, total = torch.cuda.mem_get_info()
-            return int(free), int(total)
-        vm = psutil.virtual_memory()
-        return int(vm.available), int(vm.total)
-
-
 class EyeGazeTicker(MlTicker):
-    def __init__(self):
-        super().__init__(GazeMemoryProvider())
+    def __init__(self, memProvider, modelPath, deviceName, idleTimeoutSecs):
+        super().__init__(memProvider, idleTimeoutSecs=idleTimeoutSecs)
+        self._modelPath = modelPath
+        self._deviceName = deviceName
         self._engine = None
         self.estimate = Signal(self, "estimate")
         self._retryAt = 0
@@ -36,10 +28,12 @@ class EyeGazeTicker(MlTicker):
         return 700 * 1024**2
 
     def _loadModel(self):
-        modelPath = ResourceManager().absolutePath("models/gazedino/model.joblib")
-        self._engine = GazeDinoEngine(modelPath)
+        self._engine = GazeDinoEngine(self._modelPath, deviceName=self._deviceName)
         try:
-            self._engine.load()
+            if not self._engine.load():
+                self._engine.close()
+                self._engine = None
+                return False
         except Exception as exc:
             self._engine.close()
             self._engine = None
@@ -53,7 +47,7 @@ class EyeGazeTicker(MlTicker):
             self._engine.close()
         self._engine = None
 
-    def infer(self, data, props, ts, generation):
+    def infer(self, data, props, ts, generation, receivedAt=None):
         outcome = {"schema": "gaze-direction.v1", "status": "error"}
         wasLoaded = self._loaded
         try:
@@ -63,7 +57,6 @@ class EyeGazeTicker(MlTicker):
                 self._retryAt = time.monotonic() + 30
                 outcome["status"] = "model_unavailable"
             elif not wasLoaded:
-                # Wait for a fresh frame after loading.
                 outcome["status"] = "model_ready"
             else:
                 if generation != self._generation:
@@ -71,16 +64,23 @@ class EyeGazeTicker(MlTicker):
                     self._generation = generation
                 decoder = ImageDecoder()
                 if props.get("pxFmt") != "UINT8_T" or props.get("depth") != 3:
-                    raise ValueError("Input must be visible RGB UINT8, depth 3")
-                if not decoder.setup(props["size"], 3, "UINT8_T", props["encoding"]["codec"]):
-                    raise ValueError("Unsupported input codec")
-                outcome = self._engine.analyze(decoder.decode(data))
+                    self.err("Input must be visible RGB UINT8, depth 3")
+                    outcome["error"] = "Input must be visible RGB UINT8, depth 3"
+                elif not decoder.setup(props["size"], 3, "UINT8_T", props["encoding"]["codec"]):
+                    self.err("Unsupported input codec")
+                    outcome["error"] = "Unsupported input codec"
+                else:
+                    result = self._engine.analyze(decoder.decode(data))
+                    if result is not None:
+                        outcome = result
         except Exception as exc:
             self.err("EyeGaze inference: {}".format(exc))
             outcome["error"] = str(exc)
             if not self._loaded:
                 self._retryAt = time.monotonic() + 30
         finally:
+            if receivedAt is not None:
+                outcome["source_age_secs"] = max(0, time.monotonic() - receivedAt)
             self.estimate.trigger([{"sample": outcome, "ts": ts, "generation": generation}])
 
 
@@ -89,14 +89,27 @@ class GazeDirection(MlDevice):
         super().__init__()
         self._flow = self._receiver = self._output = None
         self._source = None
+        self._memProvider = None
         self._inFlight = False
         self._generation = 0
         self._lastDispatch = 0
+        self._maxFps = 15
         self._dropped = 0
 
     def _onSetup(self):
         if not super()._onSetup():
             return False
+        modelPath = ResourceManager().absolutePath("models/gazedino/model.joblib")
+        if not fs.isFile(modelPath):
+            self.err("GazeDINO model file not found: {}".format(modelPath))
+            return False
+        self._maxFps = self._props["maxFps"]
+        resources = resolveComputeResources(
+            deviceName=self._props.get("device", "auto"), supportedDevices=GazeDinoEngine.SUPPORTED_DEVICES
+        )
+        if resources is None:
+            return False
+        self._device, self._memProvider = resources
         self._source = self.service().flowPack().get("VideoStream")
         if not self._source:
             self.err("EyeGaze requires a VideoStream input")
@@ -109,15 +122,21 @@ class GazeDirection(MlDevice):
         return EyeGazeTicker
 
     def _tickerArgs(self):
-        return {}
+        return {
+            "memProvider": self._memProvider,
+            "modelPath": ResourceManager().absolutePath("models/gazedino/model.joblib"),
+            "deviceName": self._device,
+            "idleTimeoutSecs": 600,
+        }
 
     def _onInit(self):
         channel = self.service().addChannel(
             "GazeDirection",
-            FlowChannelType.TEXT,
+            FlowChannelType.GAZE,
             {
                 "format": "json",
                 "schema": "gaze-direction.v1",
+                "maxFps": self._maxFps,
                 "angleUnit": "radians",
                 "dependsOn": ["{}.{}".format(self._source["node"], self._source["channel"])],
                 "coordinateSpace": "camera",
@@ -187,7 +206,7 @@ class GazeDirection(MlDevice):
             not self.isRunning()
             or self._ticker is None
             or self._inFlight
-            or now - self._lastDispatch < 1 / 15.0
+            or now - self._lastDispatch < 1 / self._maxFps
         ):
             self._dropped += 1
             return
@@ -200,6 +219,7 @@ class GazeDirection(MlDevice):
                 "props": copy.deepcopy(receiver.props()),
                 "ts": latest.ts,
                 "generation": self._generation,
+                "receivedAt": now,
             },
         )
 

@@ -1,0 +1,71 @@
+{
+  "schema": "eyegaze-live-node-resources.v1",
+  "date": "2026-10-28",
+  "hardware": {
+    "chip": "Apple M1",
+    "system_memory_bytes": 17179869184,
+    "logical_cpus": 8,
+    "os": "macOS 26.3",
+    "torch": "2.14.1"
+  },
+  "scope": "Actual sysinit-launched Gaze Direction process with the physical webcam and Iride browser active. Webcam, browser and service process resources are excluded.",
+  "measurement_notes": [
+    "Observed operating windows, not an equal-load comparison: no-face frames skip neural inference, and detected-face fractions differ.",
+    "CPU total percentages use all eight logical CPUs as 100%; per-core percentages use 100% for one logical CPU.",
+    "RAM is native process physical footprint. Metal driver allocations overlap unified RAM and must not be added.",
+    "GPU percentage is per-process queue time divided by observation duration, not hardware-wide shader occupancy.",
+    "Analysis latency covers face landmarks and neural analysis, excluding JPEG decode, Flow and browser latency.",
+    "Temporary timing wrappers and two allocator samples per second add a small profiling overhead included in process CPU. Profiling hooks were removed afterwards.",
+    "No electrical power, camera images or gaze coordinates were recorded."
+  ],
+  "runs": [
+    {
+      "mode": "auto",
+      "actual_engine_device": "mps",
+      "parameter_devices": [
+        "mps:0"
+      ],
+      "max_fps": 15,
+      "logical_cpus": 8,
+      "warmup_seconds": 20,
+      "sample_seconds": 60.15913791698404,
+      "cpu_total_mean_percent": 1.9869790015886213,
+      "cpu_total_peak_percent": 2.4370517885433896,
+      "physical_footprint_mean_bytes": 876547642.0840336,
+      "physical_footprint_peak_bytes": 1172607744,
+      "gpu_time_ratio_percent": 32.269249646000176,
+      "metal_peak_driver_bytes": 380026880,
+      "metal_peak_tensor_bytes": 357902080,
+      "analysis_mean_ms": 66.78968457228346,
+      "analysis_p95_ms": 78.78270791843534,
+      "valid_frames": 424,
+      "all_analysis_frames": 661,
+      "valid_fps": 7.05286741805112,
+      "cpu_per_core_mean_percent": 15.89583201270897
+    },
+    {
+      "mode": "cpu",
+      "actual_engine_device": "cpu",
+      "parameter_devices": [
+        "cpu"
+      ],
+      "max_fps": 15,
+      "logical_cpus": 8,
+      "warmup_seconds": 20,
+      "sample_seconds": 60.127707208972424,
+      "cpu_total_mean_percent": 14.435027864886152,
+      "cpu_total_peak_percent": 16.001174281029325,
+      "physical_footprint_mean_bytes": 811824294.722689,
+      "physical_footprint_peak_bytes": 1045058688,
+      "gpu_time_ratio_percent": 0.0,
+      "metal_peak_driver_bytes": 0,
+      "metal_peak_tensor_bytes": 0,
+      "analysis_mean_ms": 109.94167824313978,
+      "analysis_p95_ms": 120.13891688548028,
+      "valid_frames": 439,
+      "all_analysis_frames": 442,
+      "valid_fps": 7.307127298215958,
+      "cpu_per_core_mean_percent": 115.48022291908921
+    }
+  ]
+}

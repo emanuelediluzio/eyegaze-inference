@@ -1,12 +1,20 @@
 {
-  "version": 1,
   "nodes": {
     "N2uCore.dyn.eyegaze.GazeDirection": {
       "group": "/Inference Models/Eye Gaze",
       "label": "Gaze Direction",
       "paletteLabel": "Gaze Direction",
       "visibility": "beginner",
-      "PROPS_SCHEMA": {}
+      "PROPS_SCHEMA": {
+        "device": {
+          "label": "Compute device",
+          "visibility": "expert"
+        },
+        "maxFps": {
+          "label": "Maximum inference FPS",
+          "visibility": "beginner"
+        }
+      }
     },
     "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze": {
       "group": "/Inference Models/Eye Gaze",

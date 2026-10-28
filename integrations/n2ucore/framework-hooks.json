@@ -1,35 +1,32 @@
 {
   "N2uCore/res/web/iride/app/run/card.js": [
     [
-      "  #charts = null;       // il mattoncino dei grafici a linee, se c'\u00e8\n  #panel = null;        // updated: interfaccia propria del nodo (NodePanels), se c'\u00e8\n  #panelBox = null;     // la sua casella\n  #modeButton = null;\n",
-      "  #charts = null;       // il mattoncino dei grafici a linee, se c'\u00e8\n  #panel = null;        // updated: interfaccia propria del nodo (NodePanels), se c'\u00e8\n  #panelShown = true;\n  #panelBox = null;     // la sua casella\n  #modeButton = null;\n"
+      "  #charts = null;       // il mattoncino dei grafici a linee, se c'è\n  #panel = null;        // updated: interfaccia propria del nodo (NodePanels), se c'è\n  #panelBox = null;     // la sua casella\n  #modeButton = null;\n",
+      "  #charts = null;       // il mattoncino dei grafici a linee, se c'è\n  #panel = null;        // updated: interfaccia propria del nodo (NodePanels), se c'è\n  #panelShown = true;\n  #panelBox = null;     // la sua casella\n  #modeButton = null;\n"
     ],
     [
-      [
-        "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n",
-        "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true,\n                                renderer: options.renderer, inputSources: output.inputSources });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n"
-      ],
+      "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n",
       "      this.#panelBox.className = \"card-panel-box\";\n      this.#panel = new Panel({ node: output.node, commands: options.commandsFor?.(output.node.type) ?? {}, send: options.send,\n                                alive: options.isAlive?.(output.nodeName) ?? true,\n                                renderer: options.renderer, inputSources: output.inputSources, sessionFor: options.sessionFor });\n      this.#panel.render(this.#panelBox);\n      this.#frame.body().append(this.#panelBox);\n"
     ],
     [
-      "      // card dedicata: un'immagine o un istogramma \u00e8 solo la sua uscita; un grafico riceve tutte le uscite a\n      // linee, perch\u00e9 un multilinea pu\u00f2 prenderne pi\u00f9 d'una (ChartSection mostra solo il suo grafico)\n      const channels = output.outputs.filter(channel => channel.kind === kind && (!solo || kind === \"chart\" || channel.name === solo.name));\n      if (channels.length === 0) continue;\n      const section = new Section({\n",
-      "      // card dedicata: un'immagine o un istogramma \u00e8 solo la sua uscita; un grafico riceve tutte le uscite a\n      // linee, perch\u00e9 un multilinea pu\u00f2 prenderne pi\u00f9 d'una (ChartSection mostra solo il suo grafico)\n      const channels = output.outputs.filter(channel => !Panel?.channels?.includes(channel.name) && channel.kind === kind && (!solo || kind === \"chart\" || channel.name === solo.name));\n      if (channels.length === 0) continue;\n      const section = new Section({\n"
+      "      // card dedicata: un'immagine o un istogramma è solo la sua uscita; un grafico riceve tutte le uscite a\n      // linee, perché un multilinea può prenderne più d'una (ChartSection mostra solo il suo grafico)\n      const channels = output.outputs.filter(channel => channel.kind === kind && (!solo || kind === \"chart\" || channel.name === solo.name));\n      if (channels.length === 0) continue;\n      const section = new Section({\n",
+      "      // card dedicata: un'immagine o un istogramma è solo la sua uscita; un grafico riceve tutte le uscite a\n      // linee, perché un multilinea può prenderne più d'una (ChartSection mostra solo il suo grafico)\n      const channels = output.outputs.filter(channel => !Panel?.channels?.includes(channel.name) && channel.kind === kind && (!solo || kind === \"chart\" || channel.name === solo.name));\n      if (channels.length === 0) continue;\n      const section = new Section({\n"
     ],
     [
       "\n  attach() {\n    for (const { section } of this.#sections) section.attach();\n    this.refreshOverlays();\n",
       "\n  attach() {\n    this.#panel?.attach?.();\n    for (const { section } of this.#sections) section.attach();\n    this.refreshOverlays();\n"
     ],
     [
-      "\n  shownChannels() {\n    return new Set(this.#sections.flatMap(({ section }) => section.shownChannels()));\n  }\n\n",
-      "\n  shownChannels() {\n    return new Set([...this.#sections.flatMap(({ section }) => section.shownChannels()), ...(this.#panelShown ? this.#panel?.constructor.channels ?? [] : [])]);\n  }\n\n"
+      "  shownChannels() {\n    const shown = this.#sections.flatMap(({ section }) => section.shownChannels());\n    if (!this.#points) return new Set(shown);\n    const inputs = new Set(this.#inputNames());\n    return new Set([...shown.filter(name => !inputs.has(name)), ...this.#points]);\n  }\n\n",
+      "  shownChannels() {\n    const shown = this.#sections.flatMap(({ section }) => section.shownChannels());\n    const panelChannels = this.#panelShown ? this.#panel?.constructor.channels ?? [] : [];   // updated: canali mostrati dal pannello del nodo\n    if (!this.#points) return new Set([...shown, ...panelChannels]);\n    const inputs = new Set(this.#inputNames());\n    return new Set([...shown.filter(name => !inputs.has(name)), ...this.#points, ...panelChannels]);\n  }\n\n"
     ],
     [
-      "\n  setVisible(name, visible) {\n    for (const { section } of this.#sections) {\n      if (section.has(name)) section.setVisible(name, visible);\n",
-      "\n  setVisible(name, visible) {\n    if (this.#panel?.constructor.channels?.includes(name)) {\n      this.#panelShown = visible; this.#panelBox.hidden = !visible;\n      this.#panel.setVisible?.(visible);\n    }\n    for (const { section } of this.#sections) {\n      if (section.has(name)) section.setVisible(name, visible);\n"
+      "      this.#applyPoints();\n      return;\n    }\n    for (const { section } of this.#sections) {\n",
+      "      this.#applyPoints();\n      return;\n    }\n    if (this.#panel?.constructor.channels?.includes(name)) {   // updated: canali mostrati dal pannello del nodo\n      this.#panelShown = visible; this.#panelBox.hidden = !visible;\n      this.#panel.setVisible?.(visible);\n    }\n    for (const { section } of this.#sections) {\n"
     ],
     [
-      "    const cells = [...this.#frame.body().children].filter(cell => !cell.hidden).length;\n    const columns = cells > 1 ? 2 : 1;\n    const width = columns > 1 ? Card.TWO_COLUMNS_WIDTH : Card.ONE_COLUMN_WIDTH;\n    const cellWidth = (width - Card.BODY_PADDING * 2 - Card.ROW_GAP * (columns - 1)) / columns;\n    const heights = this.#panelBox ? [Card.CELL_HEIGHTS.panel] : [];   // updated: il pannello \u00e8 la prima casella\n",
-      "    const cells = [...this.#frame.body().children].filter(cell => !cell.hidden).length;\n    const columns = cells > 1 ? 2 : 1;\n    const width = Math.max(columns > 1 ? Card.TWO_COLUMNS_WIDTH : Card.ONE_COLUMN_WIDTH, this.#panel?.constructor.preferredWidth ?? 0);\n    const cellWidth = (width - Card.BODY_PADDING * 2 - Card.ROW_GAP * (columns - 1)) / columns;\n    const heights = this.#panelBox ? [Card.CELL_HEIGHTS.panel] : [];   // updated: il pannello \u00e8 la prima casella\n"
+      "    let width = columns > 1 ? Card.TWO_COLUMNS_WIDTH : Card.ONE_COLUMN_WIDTH;\n",
+      "    let width = Math.max(columns > 1 ? Card.TWO_COLUMNS_WIDTH : Card.ONE_COLUMN_WIDTH, this.#panel?.constructor.preferredWidth ?? 0);   // updated: larghezza chiesta dal pannello del nodo\n"
     ]
   ],
   "N2uCore/res/web/iride/app/run/output-cards.js": [
@@ -50,16 +47,16 @@
   ],
   "N2uCore/res/web/iride/app/run/card-board.js": [
     [
-      " */\n\nimport { Card } from \"./card.js\";\nimport { Texts } from \"../../lib/core/texts.js\";\n",
-      " */\n\nimport { PanelSessions } from \"../../lib/ui/forms/panel-sessions.js\";\nimport { Card } from \"./card.js\";\nimport { Texts } from \"../../lib/core/texts.js\";\n"
+      " */\n\nimport { Card } from \"./card.js\";\nimport { CardDock } from \"./card-dock.js\";\n",
+      " */\n\nimport { PanelSessions } from \"../../lib/ui/forms/panel-sessions.js\";\nimport { Card } from \"./card.js\";\nimport { CardDock } from \"./card-dock.js\";\n"
     ],
     [
       "  #activity = null;\n  #renderer = null;         // DataSocket: le schede gli cedono i canvas di immagini e grafici\n  #cards = new Map();       // id scheda -> Card\n  #send = null;             // updated: (node, cmd, args) -> Promise risposta, per le interfacce dei nodi (NodePanels)\n",
       "  #activity = null;\n  #renderer = null;         // DataSocket: le schede gli cedono i canvas di immagini e grafici\n  #panelSessions = new PanelSessions();\n  #cards = new Map();       // id scheda -> Card\n  #send = null;             // updated: (node, cmd, args) -> Promise risposta, per le interfacce dei nodi (NodePanels)\n"
     ],
     [
-      "      channels,\n      renderer: this.#renderer,\n      overlays: this.#overlays,\n      onClose: () => this.removeCard(output.id),\n",
-      "      channels,\n      renderer: this.#renderer,\n      sessionFor: (key, create) => this.#panelSessions.get(key, create),\n      overlays: this.#overlays,\n      onClose: () => this.removeCard(output.id),\n"
+      "      channels,\n      renderer: this.#renderer,\n      overlays: this.#overlays,\n      trackerInputs: this.#trackerInputs,   // updated\n",
+      "      channels,\n      renderer: this.#renderer,\n      sessionFor: (key, create) => this.#panelSessions.get(key, create),\n      overlays: this.#overlays,\n      trackerInputs: this.#trackerInputs,   // updated\n"
     ],
     [
       "  refreshAlive() {\n    if (!this.#isAlive) return;\n    for (const card of this.#cards.values()) card.refreshAlive(this.#isAlive);\n  }\n",
@@ -68,6 +65,66 @@
     [
       "  clear() {\n    for (const card of this.#allCards()) card.release();\n    this.#layer.replaceChildren();\n    this.#cards.clear();\n",
       "  clear() {\n    for (const card of this.#allCards()) card.release();\n    this.#panelSessions.clear();\n    this.#layer.replaceChildren();\n    this.#cards.clear();\n"
+    ]
+  ],
+  "N2uCore/res/web/iride/lib/model/node-schema.js": [
+    [
+      "    \"TYPE\", \"DEFAULT\", \"EDITABLE\", \"MIN\", \"MAX\", \"VALUES\", \"MAXLENGTH\", \"FIXEDLENGTH\",\n    \"type\", \"default\", \"editable\", \"min\", \"max\", \"values\", \"maxLength\", \"maxlength\",\n    \"fixedLength\", \"fixedlength\", \"step\", \"itemType\", \"exts\", \"optional\"\n  ]);\n  // tipi di nodo con le uscite decise dalle settings e non da dyndefs.json. LSLDevice crea\n",
+      "    \"TYPE\", \"DEFAULT\", \"EDITABLE\", \"MIN\", \"MAX\", \"VALUES\", \"MAXLENGTH\", \"FIXEDLENGTH\",\n    \"type\", \"default\", \"editable\", \"min\", \"max\", \"values\", \"maxLength\", \"maxlength\",\n    \"fixedLength\", \"fixedlength\", \"step\", \"itemType\", \"exts\"\n  ]);\n  // tipi di nodo con le uscite decise dalle settings e non da dyndefs.json. LSLDevice crea\n"
+    ]
+  ],
+  "N2uCore/res/web/iride/lib/model/schema-ui.js": [
+    [
+      "export class SchemaUi {\n  static PATH = \"schema-ui.json\";                // relativo a index.html\n  static UI_KEYS = [\"label\", \"visibility\", \"optional\"];\n  static NODE_KEYS = [\"group\", \"paletteLabel\"];   // solo sulla voce del nodo, non su campi e comandi\n\n",
+      "export class SchemaUi {\n  static PATH = \"schema-ui.json\";                // relativo a index.html\n  static UI_KEYS = [\"label\", \"visibility\"];\n  static NODE_KEYS = [\"group\", \"paletteLabel\"];   // solo sulla voce del nodo, non su campi e comandi\n\n"
+    ]
+  ],
+  "N2uCore/res/web/iride/lib/model/pipeline-check.js": [
+    [
+      "      if (value === undefined) continue;\n      if (typeof spec.type === \"string\") {\n        if (spec.optional === true) continue; // Explicitly optional text can be empty.\n        const blank = typeof value === \"string\" && value.trim() === \"\";\n        if ((spec.type === \"STR\" && blank) || (spec.type === \"ANY\" && (blank || value === null))) {\n",
+      "      if (value === undefined) continue;\n      if (typeof spec.type === \"string\") {\n        const blank = typeof value === \"string\" && value.trim() === \"\";\n        if ((spec.type === \"STR\" && blank) || (spec.type === \"ANY\" && (blank || value === null))) {\n"
+    ],
+    [
+      "    if (!Array.isArray(value)) return;   // non è un elenco: lo segnala già PropsValidator\n    // updated: un elenco può restare vuoto se è opzionale (SwarmAgent: subnodes, un agente da solo non ha sotto-nodi)\n    const allowsEmpty = path === \"subnodes\";\n    if (value.length === 0) {\n      if (!allowsEmpty) errors.push({ path, message: PipelineCheck.EMPTY_LIST_MESSAGE });\n      return;\n    }\n",
+      "    if (!Array.isArray(value)) return;   // non è un elenco: lo segnala già PropsValidator\n    // updated: un elenco può restare vuoto se è opzionale (SwarmAgent: subnodes, un agente da solo non ha sotto-nodi)\n    const isOptional = path === \"subnodes\" || spec?.optional === true || spec[0]?.optional === true;\n    if (value.length === 0) {\n      if (!isOptional) errors.push({ path, message: PipelineCheck.EMPTY_LIST_MESSAGE });\n      return;\n    }\n"
+    ]
+  ],
+  "N2uCore/res/web/iride/lib/render/data-worker.js": [
+    [
+      "    if (stream.type === DataWorker.TEXT_TYPE) { this.#postText(stream.label, payload); return; }   // updated\n",
+      "    if (stream.type === DataWorker.TEXT_TYPE) { this.#postText(stream.label, payload); return; }   // updated\n    if (stream.type === \"GAZE\") this.#postText(stream.label, payload);\n"
+    ]
+  ],
+  "N2uCore/res/web/iride/app/texts/en.js": [
+    [
+      "export const EN = {\n",
+      "export const EN = {\n  \"gaze.status.ok\": \"Face detected\",\n  \"gaze.status.no_face\": \"No face detected\",\n  \"gaze.status.uncalibrated\": \"Ready to calibrate\",\n  \"gaze.status.model_ready\": \"Model ready\",\n  \"gaze.status.model_unavailable\": \"Model unavailable\",\n  \"gaze.status.stale_input\": \"Waiting for fresh data\",\n  \"gaze.status.input_disconnected\": \"Camera disconnected\",\n  \"gaze.status.error\": \"Inference error\",\n  \"gaze.waitingFace\": \"Waiting for a face\",\n  \"gaze.invalidData\": \"Invalid data\",\n  \"gaze.streamUnavailable\": \"Stream unavailable\",\n  \"gaze.directionTitle\": \"Gaze direction\",\n  \"gaze.videoAria\": \"Webcam video and gaze direction\",\n  \"gaze.faceBox\": \"Face box\",\n  \"gaze.arrows\": \"Arrows\",\n  \"gaze.eyes\": \"Eye points\",\n  \"gaze.mirror\": \"Mirror\",\n  \"gaze.directionHint\": \"Keep your face visible to the camera. Arrows show gaze direction, not the point on the monitor.\",\n  \"gaze.liveGaze\": \"Live gaze\",\n  \"gaze.yaw\": \"Horizontal · yaw\",\n  \"gaze.pitch\": \"Vertical · pitch\",\n  \"gaze.roll\": \"Head tilt · roll\",\n  \"gaze.rate\": \"Estimates per second\",\n  \"gaze.technical\": \"Technical details\",\n  \"gaze.noRecentData\": \"No recent data\",\n  \"gaze.connectVideo\": \"Connect video to the VideoStream input\",\n  \"gaze.nodeDisconnected\": \"Node disconnected\",\n  \"gaze.screenTitle\": \"Screen point of gaze\",\n  \"gaze.previewAria\": \"Screen gaze point preview\",\n  \"gaze.calibratePreview\": \"Calibrate to see where you look\",\n  \"gaze.screenHint\": \"The point stays active when this card closes. Uncheck the option to hide it. Keep the window, display and camera position used for calibration.\",\n  \"gaze.pointCountLabel\": \"Calibration points \",\n  \"gaze.pointCount\": \"Calibration points\",\n  \"gaze.verify\": \"Verify accuracy (9 points)\",\n  \"gaze.fullscreen\": \"Try fullscreen\",\n  \"gaze.fullscreenUnavailable\": \"Fullscreen is not available in this browser.\",\n  \"gaze.fullscreenHint\": \"Calibrate in fullscreen, then enable Show point. Press Esc to exit fullscreen.\",\n  \"gaze.calibrateBeforePoint\": \"Calibrate this viewport before showing the point.\",\n  \"gaze.showPoint\": \"Show point on page\",\n  \"gaze.saveResults\": \"Save results\",\n  \"gaze.geometryChanged\": \"Window or display changed: repeat calibration.\",\n  \"gaze.repeatCalibration\": \"Repeat calibration for this viewport\",\n  \"gaze.faceCamera\": \"Face the camera\",\n  \"gaze.waitingGaze\": \"Waiting for gaze\",\n  \"gaze.commandFailed\": \"Command failed\",\n  \"gaze.resultsTitle\": \"Validation on 9 new targets · CSS pixels\",\n  \"gaze.calibration\": \"Calibration\",\n  \"gaze.meanError\": \"Mean error\",\n  \"gaze.imported\": \"Existing\",\n  \"gaze.resultsHint\": \"Latest validation for the current calibration and viewport. Lower values are better. Keep your head, camera and setup unchanged; repeat to confirm.\",\n  \"gaze.prepareValidation\": \"Calibrate this viewport and face the camera.\",\n  \"gaze.validationAria\": \"Independent gaze validation\",\n  \"gaze.cancel\": \"Cancel (Esc)\",\n  \"gaze.validationCancelled\": \"Validation cancelled. Calibration is unchanged.\",\n  \"gaze.validationChanged\": \"Viewport or calibration changed: repeat validation.\",\n  \"gaze.validationLostFace\": \"Face lost or stale data: repeat validation.\",\n  \"gaze.prepareCalibration\": \"Face the camera before calibrating.\",\n  \"gaze.calibrationAria\": \"Gaze calibration\",\n  \"gaze.calibrationCancelled\": \"Calibration cancelled. The previous calibration remains available.\",\n  \"gaze.viewportChanged\": \"Viewport changed: repeat calibration.\",\n  \"gaze.calibrationLostFace\": \"Face lost or stale data: reposition and repeat calibration.\",\n  \"gaze.calibrate\": \"Calibrate {count} points\",\n  \"gaze.countOption\": \"{count} points · about {seconds} s\",\n  \"gaze.points\": \"{count} points\",\n  \"gaze.validationTarget\": \"Validation {count}/9 · Look at the point and keep your head still\",\n  \"gaze.validationComplete\": \"Validation complete: mean error {mean} px, RMSE {rmse} px. Calibration is unchanged.\",\n  \"gaze.calibrationTarget\": \"Look at point {count}/{total} · Keep your head still\",\n  \"gaze.calibrationComplete\": \"Calibration complete. Point enabled on page. Fit residual: {residual} px. Run Verify accuracy to measure new targets.\",\n"
+    ],
+    [
+      "  \"gaze.resultsHint\": \"Latest validation for each mode in the same viewport. Lower values are better. Keep your head, camera and setup unchanged; repeat to confirm.\",",
+      "  \"gaze.resultsHint\": \"Latest validation for the current calibration and viewport. Lower values are better. Keep your head, camera and setup unchanged; repeat to confirm.\","
+    ],
+    [
+      "  \"gaze.validationAria\": \"Independent gaze validation\",",
+      "  \"gaze.validationAria\": \"Independent gaze validation\",\n  \"gaze.validationTimestampMissing\": \"Gaze timestamp is unavailable.\",\n  \"gaze.validationSamplesMissing\": \"At least 3 fresh samples per target are required. Repeat validation.\",\n  \"gaze.validationTargetsMissing\": \"Complete all 9 validation targets.\","
+    ]
+  ],
+  "N2uCore/res/web/iride/app/texts/it.js": [
+    [
+      "export const IT = {\n",
+      "export const IT = {\n  \"gaze.status.ok\": \"Volto rilevato\",\n  \"gaze.status.no_face\": \"Volto non rilevato\",\n  \"gaze.status.uncalibrated\": \"Pronto da calibrare\",\n  \"gaze.status.model_ready\": \"Modello pronto\",\n  \"gaze.status.model_unavailable\": \"Modello non disponibile\",\n  \"gaze.status.stale_input\": \"In attesa di dati recenti\",\n  \"gaze.status.input_disconnected\": \"Videocamera scollegata\",\n  \"gaze.status.error\": \"Errore di inferenza\",\n  \"gaze.waitingFace\": \"In attesa del volto\",\n  \"gaze.invalidData\": \"Dati non validi\",\n  \"gaze.streamUnavailable\": \"Flusso non disponibile\",\n  \"gaze.directionTitle\": \"Direzione dello sguardo\",\n  \"gaze.videoAria\": \"Video della webcam e direzione dello sguardo\",\n  \"gaze.faceBox\": \"Riquadro volto\",\n  \"gaze.arrows\": \"Frecce\",\n  \"gaze.eyes\": \"Punti occhi\",\n  \"gaze.mirror\": \"Specchio\",\n  \"gaze.directionHint\": \"Guarda la webcam mantenendo il volto visibile. Le frecce rappresentano la direzione, non il punto sul monitor.\",\n  \"gaze.liveGaze\": \"Sguardo in tempo reale\",\n  \"gaze.yaw\": \"Orizzontale · yaw\",\n  \"gaze.pitch\": \"Verticale · pitch\",\n  \"gaze.roll\": \"Inclinazione testa · roll\",\n  \"gaze.rate\": \"Stime al secondo\",\n  \"gaze.technical\": \"Dettagli tecnici\",\n  \"gaze.noRecentData\": \"Nessun dato recente\",\n  \"gaze.connectVideo\": \"Collega il video alla porta VideoStream\",\n  \"gaze.nodeDisconnected\": \"Nodo scollegato\",\n  \"gaze.screenTitle\": \"Punto di sguardo sullo schermo\",\n  \"gaze.previewAria\": \"Anteprima del punto sullo schermo\",\n  \"gaze.calibratePreview\": \"Calibra per vedere dove guardi\",\n  \"gaze.screenHint\": \"Il punto resta attivo anche chiudendo questa card: togli il check per nasconderlo. Mantieni la stessa finestra, lo stesso schermo e la stessa posizione della webcam usati per calibrare.\",\n  \"gaze.pointCountLabel\": \"Punti di calibrazione \",\n  \"gaze.pointCount\": \"Punti di calibrazione\",\n  \"gaze.verify\": \"Verifica precisione (9 punti)\",\n  \"gaze.fullscreen\": \"Prova a schermo intero\",\n  \"gaze.fullscreenUnavailable\": \"Schermo intero non disponibile in questo browser.\",\n  \"gaze.fullscreenHint\": \"Calibra qui a schermo intero, poi attiva Mostra punto. Esc esce dallo schermo intero.\",\n  \"gaze.calibrateBeforePoint\": \"Calibra questa finestra prima di mostrare il punto.\",\n  \"gaze.showPoint\": \"Mostra punto nella pagina\",\n  \"gaze.saveResults\": \"Salva risultati\",\n  \"gaze.geometryChanged\": \"Finestra o schermo cambiati: ripeti la calibrazione.\",\n  \"gaze.repeatCalibration\": \"Ripeti la calibrazione per questa finestra\",\n  \"gaze.faceCamera\": \"Posizionati davanti alla webcam\",\n  \"gaze.waitingGaze\": \"In attesa dello sguardo\",\n  \"gaze.commandFailed\": \"Comando non riuscito\",\n  \"gaze.resultsTitle\": \"Verifica su 9 punti nuovi · pixel CSS\",\n  \"gaze.calibration\": \"Calibrazione\",\n  \"gaze.meanError\": \"Errore medio\",\n  \"gaze.imported\": \"Esistente\",\n  \"gaze.resultsHint\": \"Ultima verifica della calibrazione attuale, nella stessa finestra. Valori più bassi sono migliori. Mantieni invariati testa, webcam e postazione; ripeti per confermare.\",\n  \"gaze.prepareValidation\": \"Calibra questa finestra e posizionati davanti alla webcam.\",\n  \"gaze.validationAria\": \"Verifica indipendente dello sguardo\",\n  \"gaze.cancel\": \"Annulla (Esc)\",\n  \"gaze.validationCancelled\": \"Verifica annullata. La calibrazione resta invariata.\",\n  \"gaze.validationChanged\": \"Finestra o calibrazione cambiate: ripeti la verifica.\",\n  \"gaze.validationLostFace\": \"Volto perso o dati non recenti: ripeti la verifica.\",\n  \"gaze.prepareCalibration\": \"Posizionati davanti alla webcam prima di calibrare.\",\n  \"gaze.calibrationAria\": \"Calibrazione dello sguardo\",\n  \"gaze.calibrationCancelled\": \"Calibrazione annullata. La precedente resta disponibile.\",\n  \"gaze.viewportChanged\": \"La finestra è cambiata: ripeti la calibrazione.\",\n  \"gaze.calibrationLostFace\": \"Volto perso o dati non recenti: riposizionati e ripeti la calibrazione.\",\n  \"gaze.calibrate\": \"Calibra {count} punti\",\n  \"gaze.countOption\": \"{count} punti · circa {seconds} s\",\n  \"gaze.points\": \"{count} punti\",\n  \"gaze.validationTarget\": \"Verifica {count}/9 · Guarda il punto e tieni ferma la testa\",\n  \"gaze.validationComplete\": \"Verifica completata: errore medio {mean} px, RMSE {rmse} px. La calibrazione non è stata modificata.\",\n  \"gaze.calibrationTarget\": \"Guarda il punto {count}/{total} · Tieni ferma la testa\",\n  \"gaze.calibrationComplete\": \"Calibrazione completata. Punto attivo nella pagina. Residuo del fit: {residual} px. Avvia Verifica precisione per misurare su punti nuovi.\",\n"
+    ],
+    [
+      "  \"gaze.imported\": \"Importata\",",
+      "  \"gaze.imported\": \"Esistente\","
+    ],
+    [
+      "  \"gaze.resultsHint\": \"Ultima verifica per modalità, nella stessa finestra. Valori più bassi sono migliori. Mantieni invariati testa, webcam e postazione; ripeti per confermare.\",",
+      "  \"gaze.resultsHint\": \"Ultima verifica della calibrazione attuale, nella stessa finestra. Valori più bassi sono migliori. Mantieni invariati testa, webcam e postazione; ripeti per confermare.\","
+    ],
+    [
+      "  \"gaze.validationAria\": \"Verifica indipendente dello sguardo\",",
+      "  \"gaze.validationAria\": \"Verifica indipendente dello sguardo\",\n  \"gaze.validationTimestampMissing\": \"Timestamp dello sguardo non disponibile.\",\n  \"gaze.validationSamplesMissing\": \"Servono almeno 3 misure fresche per punto. Ripeti la verifica.\",\n  \"gaze.validationTargetsMissing\": \"Completa tutti i 9 punti di verifica.\","
     ]
   ]
 }

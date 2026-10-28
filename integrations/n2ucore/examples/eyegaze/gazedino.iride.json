@@ -45,7 +45,9 @@
       "type": "N2uCore.dyn.eyegaze.GazeDirection",
       "sysinit": "SysInit",
       "settings": {
-        "name": "GazeDino"
+        "name": "GazeDino",
+        "device": "auto",
+        "maxFps": 15
       },
       "x": 440,
       "y": 120
