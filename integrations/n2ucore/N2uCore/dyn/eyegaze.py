@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import json
 import time
@@ -105,7 +107,8 @@ class GazeDirection(MlDevice):
             return False
         self._maxFps = self._props["maxFps"]
         resources = resolveComputeResources(
-            deviceName=self._props.get("device", "auto"), supportedDevices=GazeDinoEngine.SUPPORTED_DEVICES
+            deviceName="cpu" if self._props["device"] == "CPU" else "auto",
+            supportedDevices=GazeDinoEngine.SUPPORTED_DEVICES
         )
         if resources is None:
             return False

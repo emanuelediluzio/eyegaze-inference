@@ -135,7 +135,7 @@ def test_default_rate_accepts_fresh_frame_within_old_quarter_second_limit(monkey
     ticks=iter([10.,10.1]);monkeypatch.setattr('N2uCore.dyn.eyegaze.time.monotonic',lambda:next(ticks))
     n._onData(receiver(1));n._inFlight=False;n._onData(receiver(2))
     assert n._ticker.loop().invokeSlot.call_count==2
-    assert n._props == {"device": "auto", "maxFps": 15}
+    assert n._props == {"device": "GPU", "maxFps": 15}
 
 
 def test_head_roll_uses_pixel_aspect_ratio_and_does_not_change_gaze():
@@ -228,7 +228,7 @@ def test_standard_provider_and_engine_use_the_same_device(monkeypatch,expected,p
     monkeypatch.setattr('N2uCore.dyn.eyegaze.WorkerFlowInput',lambda service:MagicMock())
     monkeypatch.setattr('N2uCore.dyn.eyegaze.ResourceManager',lambda:NS(absolutePath=lambda path:'/resources/'+path))
     monkeypatch.setattr('N2uCore.dyn.eyegaze.fs.isFile', lambda path: True)
-    node=EyeGaze();node._props={'device':'auto','maxFps':15};node._service=MagicMock();node._service.flowPack.return_value={'VideoStream':{'node':'Camera','channel':'VideoStream'}}
+    node=EyeGaze();node._props={'device':'GPU','maxFps':15};node._service=MagicMock();node._service.flowPack.return_value={'VideoStream':{'node':'Camera','channel':'VideoStream'}}
     assert node._onSetup()
     args=node._tickerArgs()
     assert type(args['memProvider']) is providerType
@@ -299,3 +299,18 @@ def test_setup_applies_fps_and_gaze_channel_metadata(monkeypatch):
     assert metadata['schema'] == 'gaze-direction.v1'
     assert metadata['maxFps'] == 5
     assert metadata['dependsOn'] == ['Camera.VideoStream']
+
+
+@pytest.mark.parametrize("selection,expected", [("GPU", "auto"), ("CPU", "cpu")])
+def test_framework_cpu_gpu_selector_routes_to_shared_resources(selection, expected, monkeypatch):
+    node = bare_node()
+    node._module = "N2uCore.dyn.eyegaze"
+    node._class = "GazeDirection"
+    node._props["device"] = selection
+    node._service.flowPack.return_value = {"VideoStream": {"node": "Camera", "channel": "VideoStream"}}
+    monkeypatch.setattr("N2uCore.dyn.eyegaze.fs.isFile", lambda path: True)
+    monkeypatch.setattr("N2uCore.dyn.eyegaze.WorkerFlowInput", MagicMock())
+    resolver = MagicMock(return_value=("cpu", SystemMemoryProvider()))
+    monkeypatch.setattr("N2uCore.dyn.eyegaze.resolveComputeResources", resolver)
+    assert node._onSetup()
+    resolver.assert_called_once_with(deviceName=expected, supportedDevices=GazeDinoEngine.SUPPORTED_DEVICES)

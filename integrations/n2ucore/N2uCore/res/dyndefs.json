@@ -10,10 +10,10 @@
         "type": "ENUM",
         "itemType": "STR",
         "values": [
-          "auto",
-          "cpu"
+          "CPU",
+          "GPU"
         ],
-        "default": "auto"
+        "default": "GPU"
       },
       "maxFps": {
         "type": "INT",

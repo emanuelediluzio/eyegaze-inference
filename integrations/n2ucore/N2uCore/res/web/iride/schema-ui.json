@@ -7,8 +7,8 @@
       "visibility": "beginner",
       "PROPS_SCHEMA": {
         "device": {
-          "label": "Compute device",
-          "visibility": "expert"
+          "label": "Computation Device",
+          "visibility": "beginner"
         },
         "maxFps": {
           "label": "Maximum inference FPS",
