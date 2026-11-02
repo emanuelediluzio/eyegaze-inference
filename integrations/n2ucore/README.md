@@ -63,9 +63,11 @@ GazeDirection.GazeDirection → ScreenPointOfGaze.GazeDirection
 
 Import the [portable pipeline](examples/eyegaze/gazedino.iride.json), select the correct SysInit and verify the webcam ID **on the computer executing WebCam**. The ID depends on device enumeration on that machine.
 
-The direction node uses the fixed minimal joblib above, EMA alpha 0.25 and a 600-second idle unload. Its two standard settings are the maximum inference FPS (1–120, default 15) and Expert compute device (`auto` or `cpu`). Automatic selection uses the engine’s declared CUDA/XPU/MPS/CPU capability order. The screen node accepts input captured within 2 seconds, always starts uncalibrated and has no configuration fields.
+The direction node uses the fixed minimal joblib above, EMA alpha 0.25 and a 600-second idle unload. Its two standard settings are the maximum inference FPS (1–120, default 15) and the framework Computation Device selector (`CPU` or `GPU`, default `GPU`). `CPU` selects CPU explicitly; `GPU` requests automatic selection using the engine’s declared CUDA/XPU/MPS/CPU capability order. The screen node accepts input captured within 2 seconds, always starts uncalibrated and has no configuration fields.
 
 After installation, restart services using the device’s normal procedure, with the pipeline stopped, and reload Iride without cache. Then start the pipeline.
+
+Both nodes follow the input-dependent announcement policy used by the other processing nodes: they wait for their configured source, announce only after subscribing to its channel, stop announcing if that connection drops, and resume after reconnection. Gaze Direction waits for the webcam; Screen Point of Gaze waits for Gaze Direction. This indicates input connectivity, not face detection or calibration readiness.
 
 Open Gaze Direction to see the video, face box, eye markers and gaze arrows; technical details are collapsible. Open Screen Point of Gaze and choose **Calibrate 16 points** to run the single standard calibration. To use the whole monitor, enter fullscreen first and calibrate in that mode.
 

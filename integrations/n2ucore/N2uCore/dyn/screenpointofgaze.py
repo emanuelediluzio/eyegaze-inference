@@ -22,6 +22,7 @@ class ScreenPointOfGaze(SwDevice):
         self._lastSourceAge = 0
 
     def _onSetup(self):
+        self.disableAutoAnnounce()
         self._source = self.service().flowPack().get("GazeDirection")
         if not self._source:
             self.err("ScreenPointOfGaze requires a GazeDirection input")
@@ -62,6 +63,9 @@ class ScreenPointOfGaze(SwDevice):
         self._receiver = flow.buildReceiver(chanID)
         self._receiver.clear()
         self._receiver.hasData.attach(self._onData)
+        self.spot().announced.detach(flow.onAnnounce)
+        self.spot().stopGrabbingAnnounce()
+        self.initSpotAnnouncing()
 
     def _onDisable(self, flow):
         if self._receiver is not None:
@@ -73,6 +77,9 @@ class ScreenPointOfGaze(SwDevice):
         self._cal.cancel()
         if self.isRunning():
             self._publish({"status": "input_disconnected", "screen_xy_px": None}, time.time_ns() // 1000)
+        self.spot().announced.attach(flow.onAnnounce)
+        self.spot().startGrabbingAnnounce()
+        self.quitSpotAnnouncing()
 
     def _publish(self, sample, ts):
         self.service().publishString(

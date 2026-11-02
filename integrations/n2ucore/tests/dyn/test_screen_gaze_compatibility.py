@@ -82,8 +82,10 @@ def test_disconnect_clears_point_and_preserves_gaze_json_shape():
     node = ScreenPointOfGaze()
     node._service = MagicMock()
     node._receiver = MagicMock()
+    node.spot = MagicMock()
+    node.quitSpotAnnouncing = MagicMock()
     node.isRunning = lambda: True
-    node._onDisable(None)
+    node._onDisable(MagicMock())
     sample = json.loads(node._service.publishString.call_args.args[1])
     assert sample['status'] == 'input_disconnected'
     assert sample['gaze2d'] is None

@@ -101,6 +101,7 @@ class GazeDirection(MlDevice):
     def _onSetup(self):
         if not super()._onSetup():
             return False
+        self.disableAutoAnnounce()
         modelPath = ResourceManager().absolutePath("models/gazedino/model.joblib")
         if not fs.isFile(modelPath):
             self.err("GazeDINO model file not found: {}".format(modelPath))
@@ -172,6 +173,9 @@ class GazeDirection(MlDevice):
         self._receiver.clear()
         self._generation += 1
         self._receiver.hasData.attach(self._onData)
+        self.spot().announced.detach(flow.onAnnounce)
+        self.spot().stopGrabbingAnnounce()
+        self.initSpotAnnouncing()
 
     def _onProperties(self, flow, evt, owner, name, resType, resID, ts, payload):
         if (
@@ -196,6 +200,9 @@ class GazeDirection(MlDevice):
                 json.dumps({"schema": "gaze-direction.v1", "status": "input_disconnected"}),
                 time.time_ns() // 1000,
             )
+        self.spot().announced.attach(flow.onAnnounce)
+        self.spot().startGrabbingAnnounce()
+        self.quitSpotAnnouncing()
 
     def _onData(self, receiver):
         latest = receiver.next()
