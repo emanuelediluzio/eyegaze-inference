@@ -251,6 +251,3 @@ class GazeDirection(MlDevice):
             self.spot().announced.detach(self._flow.onAnnounce)
             self._flow.close()
         super()._onQuit()
-
-
-EyeGaze = GazeDirection

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from N2uCore.dyn.eyegaze import EyeGaze, EyeGazeTicker
+from N2uCore.dyn.eyegaze import GazeDirection, EyeGazeTicker
 from N2uCore.dyn.wrk.memprovider import AcceleratorMemoryProvider, CudaMemoryProvider, SystemMemoryProvider
 from N2uCore.inference.gazedinoengine import GazeDinoEngine
 from N2uCore.inference.screengaze import screenPoint
@@ -59,7 +59,7 @@ def test_screen_coordinates_are_clipped_pixels():
     assert screenPoint(0,0,{**c,'cx':[1]}) is None
 
 def bare_node():
-    node=EyeGaze(); node.isRunning=lambda:True
+    node=GazeDirection(); node.isRunning=lambda:True
     node._props=props();node._ticker=MagicMock();node._service=MagicMock()
     node._output=11
     return node
@@ -171,7 +171,7 @@ def test_node_and_ticker_construction_do_not_load_weights_or_face_tracker(monkey
     faceMesh = MagicMock()
     monkeypatch.setattr('N2uCore.inference.gazedinoengine.torch.hub.load',hubLoad)
     monkeypatch.setattr('N2uCore.inference.gazedinoengine.mp.solutions.face_mesh.FaceMesh',faceMesh)
-    node = EyeGaze()
+    node = GazeDirection()
     ticker = EyeGazeTicker(SystemMemoryProvider(), "/unused", "cpu", 600)
     assert node._ticker is None and not node._inFlight
     assert ticker._engine is None and not ticker._loaded
@@ -228,7 +228,7 @@ def test_standard_provider_and_engine_use_the_same_device(monkeypatch,expected,p
     monkeypatch.setattr('N2uCore.dyn.eyegaze.WorkerFlowInput',lambda service:MagicMock())
     monkeypatch.setattr('N2uCore.dyn.eyegaze.ResourceManager',lambda:NS(absolutePath=lambda path:'/resources/'+path))
     monkeypatch.setattr('N2uCore.dyn.eyegaze.fs.isFile', lambda path: True)
-    node=EyeGaze();node._props={'device':'GPU','maxFps':15};node._service=MagicMock();node._service.flowPack.return_value={'VideoStream':{'node':'Camera','channel':'VideoStream'}}
+    node=GazeDirection();node._props={'device':'GPU','maxFps':15};node._service=MagicMock();node._service.flowPack.return_value={'VideoStream':{'node':'Camera','channel':'VideoStream'}}
     assert node._onSetup()
     args=node._tickerArgs()
     assert type(args['memProvider']) is providerType
