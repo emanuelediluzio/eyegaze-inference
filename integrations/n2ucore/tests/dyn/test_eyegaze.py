@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+import torch
 from N2uCore.dyn.eyegaze import GazeDirection, EyeGazeTicker
 from N2uCore.dyn.wrk.memprovider import AcceleratorMemoryProvider, CudaMemoryProvider, SystemMemoryProvider
 from N2uCore.inference.gazedinoengine import GazeDinoEngine
@@ -51,6 +52,19 @@ def test_missing_face_clears_prediction_and_smoothing():
 def test_non_rgb_input_rejected():
     e=engine()
     assert e.analyze(np.zeros((20,20),np.uint8)) is None
+
+@pytest.mark.parametrize('dtype',[torch.float16,torch.float32])
+def test_crop_reaches_the_model_in_its_precision(dtype):
+    e=GazeDinoEngine('/unused')
+    e._device,e._dtype=torch.device('cpu'),dtype
+    e._transform=lambda rgb:torch.zeros(3,4,4)
+    e._model=MagicMock(return_value=torch.tensor([[.1,-.2]],dtype=dtype))
+    angles=e._predictCrop(np.zeros((4,4,3),np.uint8))
+    assert e._model.call_args[0][0].dtype==dtype and angles.dtype==np.float64
+    assert angles==pytest.approx([.1,-.2],abs=1e-3)
+
+def test_half_precision_only_on_a_gpu():
+    assert set(GazeDinoEngine.HALF_DEVICES)==set(GazeDinoEngine.SUPPORTED_DEVICES)-{'cpu'}
 
 def test_screen_coordinates_are_clipped_pixels():
     c={'cx':[500,100,0,0,0,0],'cy':[300,0,100,0,0,0],'screen_w':1000,'screen_h':600}
