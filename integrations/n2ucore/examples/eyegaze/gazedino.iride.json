@@ -46,8 +46,7 @@
       "sysinit": "SysInit",
       "settings": {
         "name": "GazeDino",
-        "device": "GPU",
-        "maxFps": 15
+        "device": "GPU"
       },
       "x": 440,
       "y": 120

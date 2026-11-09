@@ -25,7 +25,7 @@ Webcam ID `0` selects the first camera on the computer executing the node;
 `1`, `2`, etc. select other cameras. Device ordering can differ between machines.
 Windows uses DirectShow and Linux uses V4L2; check camera permissions.
 
-The node always loads `N2uCore/res/models/gazedino/model.joblib` in the target framework. Device selection defaults to automatic; choose `cpu` in **Compute device** under Iride's Expert settings to force CPU inference. This uses the standard `device` ENUM (`auto` or `cpu`, default `auto`) and is saved with the pipeline. **Maximum inference FPS** (`maxFps`, standard `INT`, 1–120, default 15) limits frame dispatch. Change it in node settings before starting the pipeline. This is a ceiling: camera rate and model speed can lower the actual output rate. The node processes only the latest available frame with one inference in flight; it does not queue old frames or run on a fixed 60 ms timer. DINOv2 source must be provisioned in the local Torch Hub cache (`facebookresearch_dinov2_main/hubconf.py`); runtime never downloads missing source. The model path, smoothing and idle timeout remain fixed in code.
+The node always loads `N2uCore/res/models/gazedino/model.joblib` in the target framework. Computation Device is the standard `device` ENUM (`CPU` or `GPU`, default `GPU`), saved with the pipeline; `GPU` picks CUDA, XPU or MPS in half precision and falls back to CPU. There is no FPS setting: the node sends one frame at a time to the model and drops the frames that arrive meanwhile, so the model sets the rate. DINOv2 source must be provisioned in the local Torch Hub cache (`facebookresearch_dinov2_main/hubconf.py`); runtime never downloads missing source. The model path, smoothing and idle timeout remain fixed in code.
 
 Screen Point of Gaze always starts without calibration and publishes `uncalibrated` with `screen_xy_px: null`. Calibration belongs to the current node process; there is no calibration-path setting or file import/export.
 
@@ -37,8 +37,8 @@ reload Iride without cache. Do not interrupt active pipelines.
 Open the **Screen Point of Gaze** card while the pipeline is running:
 
 - **Calibrate 16 points** runs the single standard 4×4 grid across the Iride browser area. Follow the targets while keeping your head still. Collection lasts 2.8 s per target and discards the first 0.98 s. The panel advances every 3 s.
-- The backend requires at least three fresh predictions per target, filters outliers and computes a cubic fit only after all 16 targets are complete and the matrix has full rank. The backend rejects additional targets and incomplete fits. Missing faces or a degenerate fit cause the command to fail without replacing the previous calibration.
-- Very low inference rates can fail the three-sample requirement. For guided calibration, start with a ceiling of at least 5 FPS and check that the actual model throughput is sufficient. A 1 FPS ceiling is useful for standalone direction monitoring, but cannot fill the current calibration sampling window.
+- The backend requires at least three fresh predictions per target, filters outliers and fits only after all 16 targets are complete: the polynomial degree (1–3) with the lowest leave-one-out error wins, on the GazeDINO angles plus a light iris correction (iris position and eye openness, weight 0.25, ridge on the iris terms only). The backend rejects additional targets and incomplete fits. Missing faces or a degenerate fit cause the command to fail without replacing the previous calibration.
+- A very slow model (for example on CPU) can fail the three-sample requirement per target.
 - **Show point on page** enables the dot inside the Iride page after calibration.
 - **Try fullscreen** expands Iride across the monitor; calibrate after the viewport changes.
 - **Esc / Cancel**, window resizing, a hidden page or loss of the node cancels the procedure. Loss of the gaze-direction stream also cancels collection on the backend.
@@ -47,7 +47,7 @@ Control names in this guide describe the corresponding panel actions in English.
 
 Guided targets use **CSS pixels within the Iride area**. Output coordinates use the same reference; they are not global desktop coordinates. To apply the output across an entire monitor, use a fullscreen viewport that remains stable throughout calibration and operation, or provide an explicit origin/scale transformation. Do not move the camera or change your seating position after calibration.
 
-The Gaze Direction card displays video, the face box, eye centres and gaze arrows. The Screen Point of Gaze card manages calibration and draws the dot within Iride, including fullscreen mode. Technical data remains available in a collapsible section and through JSON streams. The dot cannot overlay other desktop applications.
+The Gaze Direction card displays the video with the gaze points, the estimate quality and the head position hints. The Screen Point of Gaze card manages calibration and draws the dot within Iride, including fullscreen mode. Technical data remains available in a collapsible section and through JSON streams. The dot cannot overlay other desktop applications.
 
 ### Session-only calibration
 
@@ -55,32 +55,27 @@ The guided procedure fits coefficients in memory for the current process. Restar
 
 ## Data contracts
 
-Direction (`GazeDirection`, GAZE):
+Direction (`GazeDirection`, GAZE, schema `gaze-direction.v1`), a real sample from the integration test:
 
 ```json
-{"schema":"gaze-direction.v1","status":"ok","yaw_rad":0.2,"pitch_rad":-0.1,"yaw_deg":11.459,"pitch_deg":-5.730,"roll_rad":0.05,"roll_deg":2.865,"roll_source":"head_landmarks","direction_xyz":[0.197677,0.099833,-0.975170],"coordinate_space":"camera","bbox_xyxy_px":[100,80,300,320],"confidence":null,"source_ts_us":1792762000000000,"dropped_frames":12}
+{"status":"ok","yaw_rad":-0.0003,"pitch_rad":-0.0635,"bbox_xyxy_px":[225,64,337,166],"eyes_px":[[254.5,94.9],[308.2,96.9]],"eye_center_px":[281.6,96.9],"eye_span_px":75.0,"iris":[-0.011,-0.084,0.255],"quality":{"score":null,"hint":"move_closer","face_size_ratio":0.175,"jitter_deg":null}}
 ```
 
-Head roll is computed from MediaPipe Face Mesh landmarks 33 and 263 as `atan2(dy_pixels, dx_pixels)`, with clockwise-positive image coordinates. It is separate from the two learned GazeDINO outputs, and null if a valid eye axis is unavailable. No neural-network retraining is involved.
+`iris` is the iris position between the inner and outer eye corner (x, y, in eye widths, mean of both eyes) and the eye openness. `GazePoints` (`POINTS_2D`) carries the eye midpoint and the gaze direction projected on the image, drawn by the card.
 
-Vector: `[sin(yaw)·cos(pitch), -sin(pitch), -cos(yaw)·cos(pitch)]`, using the trained model’s convention. No probability is fabricated: this is a regression model rather than a classifier.
-
-Screen point (`ScreenPoint`, GAZE):
+Screen point (`ScreenPoint`, GAZE, schema `screen-point-of-gaze.v1`):
 
 ```json
-{"schema":"screen-point-of-gaze.v1","coordinate_space":"screen_pixels","source_ts_us":1792762000000000,"status":"ok","screen_xy_px":[520,290],"screen_size_px":[1000,600]}
+{"status":"ok","quality":{"score":82,"hint":"ok","face_size_ratio":0.31,"jitter_deg":0.4},"screen_xy_px":[520,290],"screen_size_px":[1000,600],"gaze2d":[0.52,0.483],"calibration_drift":{"drifted":false,"hint":"ok","dx":0.02,"dy":-0.01,"scale":1.03,"reference":[640,300,180],"current":[643.6,298.2,185.4]},"frame_aspect":0.5625}
 ```
 
-Both outputs preserve the capture timestamp. The first node performs inference on an ML thread with one frame in flight; it drops excess frames and the frame that triggered weight loading. The second rejects duplicate/out-of-order timestamps, processing age or increasing transport backlog above 2 seconds, nonfinite values and incompatible formats. Its clock-offset estimate uses local monotonic arrival time; hosts do not need identical wall clocks. See [runtime and clock contracts](../../docs/eyegaze-node-review.md#runtime-failure-and-clock-contracts) for first-packet and camera-transport limits.
-
-The statuses `no_face`, `model_ready`, `model_unavailable`, `error`, `input_disconnected`, `stale_input`, `invalid_input` and `uncalibrated` do not carry usable coordinates. Consumers must not repeat the last point after the stream stops; they must check freshness themselves.
+Both outputs keep the timestamp and packID of the camera frame. The statuses `no_face`, `model_unavailable`, `error` and `uncalibrated` carry no coordinates (`screen_xy_px` and `gaze2d` are null). Consumers must not repeat the last point after the stream stops.
 
 ## Verification
 
 ```bash
-python -m pytest tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py tests/dyn/wrk/test_mldevice.py -q
-node --test tests/web/screen-gaze-panel.test.mjs
-python tools/verify_eyegaze_iride.py --fixture /path/to/face.png
+python -m pytest tests/dyn/test_eyegaze.py tests/dyn/test_gaze_quality.py tests/dyn/test_screen_calibration.py tests/dyn/test_screenpointofgaze.py -q
+python tools/verify_eyegaze_iride.py --fixture /path/to/face.png --address <LAN address>
 ```
 
 The integration test starts isolated services and a test video. It checks the chain `Iride WS → uinode → sysinit → camera → direction → projection → Iride WS`, timestamps, uncalibrated status, fresh guided target collection and cancellation without importing calibration files. It then stops the pipeline and waits for IDLE. It does not use a physical webcam or modify existing pipelines. The replay image cannot establish pointing accuracy or fit a meaningful multi-target calibration. Python tests separately verify fitting and projection on synthetic data; real-subject calibration must still be tested interactively.

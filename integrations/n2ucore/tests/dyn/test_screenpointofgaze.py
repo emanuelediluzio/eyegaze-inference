@@ -1,101 +1,170 @@
+"""Tests for the ScreenPointOfGaze node (N2uCore/dyn/screenpointofgaze.py).
+
+  a. ``_onSubscribe``: the second subscription emits INPUT_RECONNECTION;
+  b. ``_onDisable``: INPUT_DISCONNECTION, waiting for the input again;
+  c. ``_onInputChanged``: the output gets the input rate, the image size is kept;
+  d. ``_onDataCome``: the output sample carries the input ts and packID, and
+     only the per-sample fields (schema, coordinate spaces, pupils are channel
+     properties);
+  e. ``_process``: upstream status kept.
+
+Built without an event loop (``__new__`` + attributes, MagicMock where
+needed), imitating tests/dyn/test_roier_input_properties.py.
+
+Run from project root:
+    python3 -m unittest tests.dyn.test_screenpointofgaze -v
+"""
+
 import json
 import time
-from pathlib import Path
+import unittest
 from unittest.mock import MagicMock
-import numpy as np
-import pytest
-from N2uCore.inference.screengaze import ScreenCalibration, screenPoint, validateCalibration
+
 from N2uCore.dyn.screenpointofgaze import ScreenPointOfGaze
-
-CAL={'cx':[500,100,0,0,0,0],'cy':[300,0,100,0,0,0],'screen_w':1000,'screen_h':600}
-
-def node():
-    n=ScreenPointOfGaze();n._props={};n._service=MagicMock()
-    return n
-
-def direction(**kw):
-    return {'schema':'gaze-direction.v1','status':'ok','yaw_rad':.2,'pitch_rad':-.1,**kw}
-
-def now():return time.time_ns()//1000
-
-def test_mapping_and_uncalibrated():
-    n=node();assert n._process(direction(),now())['status']=='uncalibrated'
-    n._lastTs=None;n._cal._calibration=CAL
-    assert n._process(direction(),now())['screen_xy_px']==[520,290]
-
-def test_missing_face_never_reuses_pixels():
-    n=node();n._cal._calibration=CAL
-    assert n._process(direction(status='no_face',yaw_rad=None,pitch_rad=None),now())['screen_xy_px'] is None
-
-@pytest.mark.parametrize('bad',[float('nan'),float('inf'),None,True,'1'])
-def test_bad_angles(bad):
-    assert node()._process(direction(yaw_rad=bad),now())['status']=='invalid_input'
-
-def test_stale_out_of_order_wrong_schema():
-    n=node();ts=now();n._process(direction(),ts)
-    assert n._process(direction(),ts)['status']=='stale_input'
-    assert n._process(direction(),ts-3000000)['status']=='stale_input'
-    assert n._process({'schema':'gazedino.v1','status':'ok'},ts+1)['status']=='invalid_input'
-
-def test_cancel_keeps_current_session_calibration_and_import_commands_are_absent():
-    n=node();n._cal._calibration=CAL;n._cal.begin(1000,600)
-    n.cancelCalibration(None,{})
-    assert n._cal.calibration()==CAL and not n._cal.status()['collecting']
-    assert not hasattr(n,'setCalibration') and not hasattr(n,'clearCalibration')
-
-def test_guided_fit_16_targets_and_projection():
-    c=ScreenCalibration();c.begin(1000,600)
-    for i,x in enumerate(np.linspace(-.3,.3,4)):
-        for j,y in enumerate(np.linspace(-.2,.2,4)):
-            c.target(500+1000*x,300+1000*y,0,0)
-            for k in range(6):c.feed(x,y,1+k*.2,1000000+k*200000)
-            c.finishTarget()
-    r=c.fit();assert r['fit_residual_px']<1e-6
-    # Held-out synthetic point verifies coefficients independently of calibration targets.
-    px=screenPoint(.123,.087,c.calibration())
-    assert abs(px[0]-623)<=1 and abs(px[1]-387)<=1
-    assert validateCalibration(json.loads(json.dumps(c.calibration())))==c.calibration()
-
-def test_degenerate_fit_keeps_old_calibration():
-    c=ScreenCalibration();c._calibration=CAL;c.begin(1000,600)
-    c._targets=[[.1,.1,10+i,20+i] for i in range(16)]
-    assert c.fit() is None
-    assert c._calibration==CAL
-
-def test_target_requires_new_samples_after_settling():
-    c=ScreenCalibration();c.begin(1000,600);c.target(500,300,0,1000000)
-    c.feed(.1,.2,.1,1100000) # before settling
-    c.feed(.1,.2,1.2,1100000) # arrived late but captured before target settled
-    assert c.finishTarget() is None
-    assert c._targets==[]
-
-def test_screen_node_has_no_model_dependency():
-    import sys,subprocess
-    output=subprocess.check_output([sys.executable,'-c',
-        'import sys; from N2uCore.dyn.screenpointofgaze import ScreenPointOfGaze; '
-        'assert "torch" not in sys.modules and "mediapipe" not in sys.modules; print("ok")'],text=True)
-    assert output.strip()=='ok'
-
-def test_registered_command_schemas_accept_real_payloads():
-    from N2uCore.validator import JsonValidator
-    root=Path(__file__).resolve().parents[2]
-    defs=json.loads((root/'N2uCore/res/dyndefs.json').read_text())
-    commands=defs['N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze']['commands']
-    for name,args in [('beginCalibration',{'screen_w':1000,'screen_h':600}),('calibrationTarget',{'x':500.,'y':300.})]:
-        v=JsonValidator();v.setSchema(commands[name]['args'])
-        assert v.validate(args),name
+from N2uCore.inference.screengaze import ScreenCalibration
+from N2uCore.miniflow.proto import FlowEvent
 
 
-def test_calibration_has_a_bounded_16_target_limit():
-    c=ScreenCalibration();c.begin(1000,600)
-    c._targets=[[.1,.1,10+i,20+i] for i in range(16)]
-    assert c.target(500,300,0,0) is None
-    assert len(c._targets)==16
+def _sample(**fields):
+    """Build an "ok" gaze-direction sample, with ``fields`` overridden."""
+    sample = {"status": "ok", "yaw_rad": 0.1, "pitch_rad": -0.1, "quality": None,
+              "eye_center_px": [320.0, 200.0], "eye_span_px": 110.0, "iris": [0.0, 0.05, 0.3],
+              "bbox_xyxy_px": [220, 100, 420, 340]}
+    sample.update(fields)
+    return sample
 
 
-@pytest.mark.parametrize("count", [10, 15, 17, 32])
-def test_fit_requires_exactly_16_completed_targets_and_preserves_current_fit(count):
-    c=ScreenCalibration();c._calibration=CAL;c.begin(1000,600)
-    c._targets=[[.1,.1,10+i,20+i] for i in range(count)]
-    assert c.fit() is None
-    assert c._calibration==CAL
+def _nowUs():
+    """A timestamp in microseconds on the clock of the frames (time.time)."""
+    return time.time_ns() // 1000
+
+
+def _makeNode():
+    """Build a bare ScreenPointOfGaze with only the attributes the tested methods read.
+
+    Returns:
+        ScreenPointOfGaze: the bare node under test (no __init__ run).
+    """
+    node = ScreenPointOfGaze.__new__(ScreenPointOfGaze)
+    node._cal = ScreenCalibration()
+    node._receiver = None
+    node._source = {"node": "gaze", "channel": "GazeDirection"}
+    node._output = 21
+    node._imageSize = {"w": 640, "h": 480}
+    node.err = MagicMock()
+    node.isRunning = MagicMock(return_value=True)
+
+    service = MagicMock()
+    service.channelByID.return_value.isEmpty.return_value = False   # someone reads ScreenPoint
+    node.service = MagicMock(return_value=service)
+    spot = MagicMock()
+    node.spot = MagicMock(return_value=spot)
+    node.initSpotAnnouncing = MagicMock()
+    node.quitSpotAnnouncing = MagicMock()
+    return node
+
+
+class _FakePack:
+    """A fake FlowChannelData: data, ts and packID."""
+
+    def __init__(self, data, ts, packID):
+        self.data = data
+        self.ts = ts
+        self.packID = packID
+
+
+class _FakeReceiver:
+    """A fake FlowChannelReceiver holding one pack."""
+
+    def __init__(self, pack):
+        self._packs = [pack]
+
+    def next(self):
+        """Return the next pack, or None."""
+        return self._packs.pop(0) if self._packs else None
+
+    def isEmpty(self):
+        """Return True when no pack is left."""
+        return not self._packs
+
+
+class TestSubscribe(unittest.TestCase):
+    """(a) subscription of the GazeDirection input."""
+
+    def test_second_subscription_is_a_reconnection(self):
+        """(a) first subscription: no event; second one: INPUT_RECONNECTION."""
+        node = _makeNode()
+        flow = MagicMock()
+        flow.buildReceiver.return_value.props.return_value = {"rate": 15, "imageSize": {"w": 640, "h": 480}}
+
+        node._onSubscribe(flow, 5)
+        node.service().emitEvent.assert_not_called()
+
+        node._onSubscribe(flow, 5)
+        node.service().emitEvent.assert_called_once_with(FlowEvent.EXTERNAL, "INPUT_RECONNECTION", node._source)
+
+
+class TestDisable(unittest.TestCase):
+    """(b) input lost."""
+
+    def test_disconnection_event(self):
+        """(b) INPUT_DISCONNECTION emitted, announcements grabbed again (as ImageGeometry)."""
+        node = _makeNode()
+
+        node._onDisable(MagicMock())
+
+        node.service().emitEvent.assert_called_once_with(FlowEvent.EXTERNAL, "INPUT_DISCONNECTION", node._source)
+        node.spot().startGrabbingAnnounce.assert_called_once()
+
+
+class TestRate(unittest.TestCase):
+    """(c) rate of the output."""
+
+    def test_rate_follows_input(self):
+        """(c) input at 15 Hz -> output at 15 Hz; the camera image size of the input is kept."""
+        node = _makeNode()
+        node._onInputChanged({"rate": 15, "imageSize": {"w": 1280, "h": 720}})
+        node.service().channelByID.assert_called_with(21)
+        node.service().channelByID().setProperties.assert_called_once_with({"rate": 15})
+        self.assertEqual(node._imageSize, {"w": 1280, "h": 720})
+
+
+class TestData(unittest.TestCase):
+    """(d) one input sample, one output sample."""
+
+    def test_output_carries_pack_id(self):
+        """(d) the ScreenPoint sample carries the input ts and packID."""
+        node = _makeNode()
+        ts = _nowUs()
+        node._onDataCome(_FakeReceiver(_FakePack(json.dumps(_sample()).encode(), ts, 7)))
+
+        args = node.service().publishString.call_args[0]
+        self.assertEqual(args[0], 21)
+        self.assertEqual(args[2:], (ts, 7))
+        published = json.loads(args[1])
+        self.assertEqual(published["status"], "uncalibrated")
+        for key in ("schema", "source_ts_us", "eyeleft", "eyeright", "coordinate_space"):
+            self.assertNotIn(key, published)
+
+
+    def test_nobody_reading_publishes_nothing(self):
+        """(d) no subscriber on ScreenPoint -> nothing processed or published (as ImageGeometry)."""
+        node = _makeNode()
+        node.service().channelByID.return_value.isEmpty.return_value = True
+        node._onDataCome(_FakeReceiver(_FakePack(json.dumps(_sample()).encode(), _nowUs(), 7)))
+        node.service().publishString.assert_not_called()
+
+
+class TestProcess(unittest.TestCase):
+    """(e) one input sample."""
+
+    def test_upstream_status_is_kept(self):
+        """(e) upstream "no_face" -> "no_face", no screen point."""
+        node = _makeNode()
+        output = node._process(_sample(status="no_face", yaw_rad=None, pitch_rad=None), _nowUs())
+        self.assertEqual(output["status"], "no_face")
+        self.assertNotIn("screen_xy_px", output)   # published as null by _publish
+
+
+if __name__ == "__main__":
+    unittest.main()

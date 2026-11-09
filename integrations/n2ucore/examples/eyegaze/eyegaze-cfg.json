@@ -3,8 +3,7 @@
   "class": "GazeDirection",
   "name": "GazeDino",
   "props": {
-    "device": "GPU",
-    "maxFps": 15
+    "device": "GPU"
   },
   "network": {
     "ssl": {

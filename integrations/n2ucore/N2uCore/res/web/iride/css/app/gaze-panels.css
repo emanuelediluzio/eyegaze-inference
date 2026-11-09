@@ -1,15 +1,31 @@
-/* Layout only; controls and palette use the shared card theme. */
+/* iride — css/app/gaze-panels.css
+ *
+ * I pannelli dei nodi gaze nelle schede (app/run/panels: GazeDirectionPanel, ScreenGazePanel), il pallino del punto
+ * guardato sopra la pagina (ScreenGazeSession) e il riquadro a tutta pagina di calibrazione e verifica. Colori e
+ * misure dai token delle schede (tokens/theme.css, tokens/layout.css), bottoni dei comandi delle schede
+ * (.command-run, command-panel.css).
+ * Nuovo in iride (2026-11-04): da gaze-panels.css di eyegaze-inference (integrations/n2ucore, del collega).
+ * Differenze: niente strato SVG sopra il video (la direzione la disegna il Worker sullo stesso canvas), quindi lo
+ * specchio gira solo il canvas; la casella del pannello prende tutta la riga della scheda.
+ * Updated (2026-11-04): qualità della stima e suoi avvisi (.gaze-quality, .gaze-quality-hint, testo di avviso con
+ * --card-warn-ink, leggibile sulla scheda chiara anche nel tema scuro), guida di posizione rispetto alla calibrazione
+ * (.gaze-pose-guide, .gaze-pose-box); il punto da guardare è un mirino (.gaze-target: croce, punto centrale, anello
+ * che si stringe, colore per fase) con i secondi che restano (.gaze-target-count).
+ */
+
+/* La casella del pannello nella griglia della scheda (Card): tutta la riga. */
+.card-panel-box {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
 .gaze-panel {
   background: var(--card-bg);
   color: var(--card-text);
   padding: var(--space-3);
   box-sizing: border-box;
   font: inherit;
-  container-type: inline-size;
-  --settings-input-bg: var(--card-cell-bg);
-  --line: var(--card-border);
-  --ink: var(--card-text);
-  --muted: var(--card-muted);
+  container-type: inline-size;   /* sotto i 580px i valori vanno sotto il video (@container in fondo) */
   min-width: 0;
   width: 100%;
   border-radius: var(--radius-lg);
@@ -17,6 +33,7 @@
 
 .gaze-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -36,9 +53,10 @@
   padding: 5px 10px;
 }
 
+/* GazeDirectionPanel: video a sinistra, valori a destra */
 .gaze-layout {
   display: grid;
-  grid-template-columns: minmax(0,1fr) 180px;
+  grid-template-columns: minmax(0, 1fr) 180px;
   gap: var(--space-4);
 }
 
@@ -48,7 +66,7 @@
 
 .gaze-video-stage {
   position: relative;
-  aspect-ratio: 16/9;
+  aspect-ratio: 16 / 9;
   background: var(--card-media-bg);
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -61,15 +79,7 @@
   object-fit: contain;
 }
 
-.gaze-video-overlay {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.gaze-video-stage.mirrored .gaze-video,.gaze-video-stage.mirrored .gaze-video-overlay {
+.gaze-video-stage.mirrored .gaze-video {
   transform: scaleX(-1);
 }
 
@@ -80,12 +90,17 @@
   margin-top: 10px;
 }
 
-.gaze-switches label,.gaze-switches:has(>input) {
+.gaze-switches label,
+.gaze-switches:has(> input) {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   font-size: .8125rem;
   cursor: pointer;
+}
+
+.gaze-switches input {
+  flex-shrink: 0;
 }
 
 .gaze-hint {
@@ -123,27 +138,32 @@
   font-weight: 600;
 }
 
-.gaze-details {
+.gaze-quality-hint {
   font-size: .75rem;
-  margin-top: 12px;
-}
-
-.gaze-details summary {
-  cursor: pointer;
   color: var(--card-muted);
+  margin: 0;
 }
 
-.gaze-details pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 190px;
-  overflow: auto;
-  background: var(--card-cell-bg);
-  border: 1px solid var(--card-cell-border);
-  padding: 8px;
-  font-size: .6875rem;
+.gaze-quality-hint.warn {
+  color: var(--card-warn-ink);
 }
 
+.gaze-quality {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+  font-size: .75rem;
+  color: var(--card-muted);
+  margin: var(--space-2) 0 0;
+}
+
+.gaze-quality-score {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ScreenGazePanel: anteprima, bottoni, messaggi, verifica */
 .gaze-actions {
   display: flex;
   gap: 8px;
@@ -159,7 +179,7 @@
 
 .gaze-preview {
   position: relative;
-  aspect-ratio: 16/9;
+  aspect-ratio: 16 / 9;
   background: var(--card-cell-bg);
   border: 1px solid var(--card-cell-border);
   border-radius: var(--radius-md);
@@ -181,9 +201,30 @@
   height: 10px;
   border-radius: 50%;
   background: var(--accent);
-  transform: translate(-50%,-50%);
+  transform: translate(-50%, -50%);
 }
 
+.gaze-validation-results {
+  overflow: auto;
+  margin-top: 12px;
+  font-size: .75rem;
+}
+
+.gaze-validation-results table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gaze-validation-results th,
+.gaze-validation-results td {
+  padding: 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--card-cell-border);
+}
+
+/* Il pallino del punto guardato sopra la pagina (ScreenGazeSession): sopra tutto, i clic passano */
 .gaze-page-dot {
   position: fixed;
   width: 22px;
@@ -192,15 +233,18 @@
   box-shadow: 0 0 0 2px var(--accent-dark);
   background: var(--accent);
   border-radius: 50%;
-  transform: translate(-50%,-50%);
+  transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 2147483645;
 }
 
-.gaze-page-dot[hidden],.gaze-mini-dot[hidden],.gaze-preview-label[hidden] {
+.gaze-page-dot[hidden],
+.gaze-mini-dot[hidden],
+.gaze-preview-label[hidden] {
   display: none;
 }
 
+/* Calibrazione e verifica: tutta la pagina, il punto da guardare, la scritta in basso, Annulla in alto a destra */
 .gaze-calibration {
   position: fixed;
   inset: 0;
@@ -209,15 +253,113 @@
   z-index: 2147483647;
 }
 
+/* Il mirino del punto da guardare: croce, punto centrale da fissare, anello che si stringe in TARGET_MS.
+   Arancione nel primo secondo (lo sguardo arriva, il nodo non raccoglie), verde mentre raccoglie (data-phase="hold"). */
 .gaze-target {
+  --gaze-target-color: var(--warn);
   position: absolute;
-  width: 24px;
-  height: 24px;
-  border: 5px solid var(--card-cell-border);
-  background: var(--accent);
+  width: 56px;
+  height: 56px;
+  transform: translate(-50%, -50%);
+}
+
+.gaze-target[data-phase="hold"] {
+  --gaze-target-color: var(--status-ok);
+}
+
+.gaze-target-ring {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border: 3px solid var(--gaze-target-color);
   border-radius: 50%;
-  transform: translate(-50%,-50%);
-  box-sizing: content-box;
+  transition: border-color .15s;
+}
+
+.gaze-target.running .gaze-target-ring {
+  animation: gaze-ring-shrink var(--gaze-target-ms, 3000ms) linear forwards;
+}
+
+@keyframes gaze-ring-shrink {
+  from { transform: scale(1); }
+  to { transform: scale(.3); }
+}
+
+.gaze-target-cross::before,
+.gaze-target-cross::after {
+  content: "";
+  position: absolute;
+  background: var(--gaze-target-color);
+  transition: background-color .15s;
+}
+
+.gaze-target-cross::before {
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+}
+
+.gaze-target-cross::after {
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 1px);
+  width: 2px;
+}
+
+.gaze-target-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--card-text);
+  box-shadow: 0 0 0 3px var(--card-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gaze-target.running .gaze-target-ring { animation: none; }
+}
+
+.gaze-pose-guide {
+  position: relative;
+  width: min(100%, 220px);
+  margin: var(--space-2) 0 0;
+  background: var(--card-cell-bg);
+  border: 1px solid var(--card-cell-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.gaze-pose-box {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 40%;
+}
+
+.gaze-pose-box.reference {
+  border: 2px dashed var(--card-muted);
+}
+
+.gaze-pose-box.current {
+  border: 2px solid var(--card-warn-ink);
+}
+
+.gaze-pose-box.current.aligned {
+  border-color: var(--status-ok);
+}
+
+/* I secondi che restano: piccoli, in alto a destra fuori dal mirino, per non tirare lo sguardo verso il basso */
+.gaze-target-count {
+  position: absolute;
+  bottom: 100%;
+  left: 100%;
+  font-size: .875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--card-muted);
 }
 
 .gaze-calibration p {
@@ -234,21 +376,10 @@
   right: 16px;
 }
 
-.gaze-alert {
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
-  background: var(--card-cell-bg);
-  font-size: .75rem;
-  margin: 12px 0;
-}
-
-.card-panel-box:has(.gaze-panel) {
-  grid-column: 1/-1;
-}
-
-@container(max-width:580px) {
+/* Scheda stretta: i valori sotto il video, in due colonne compatte */
+@container (max-width: 580px) {
   .gaze-layout {
-    grid-template-columns: minmax(0,1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .gaze-readings {
@@ -259,7 +390,7 @@
 
   .gaze-metrics {
     display: grid;
-    grid-template-columns: minmax(0,1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: baseline;
     gap: var(--space-2);
   }
@@ -268,32 +399,4 @@
     margin: 0;
     font-size: 1.25rem;
   }
-
-}
-
-.gaze-switches input {
-  flex-shrink: 0;
-}
-
-.gaze-heading {
-  flex-wrap: wrap;
-}
-
-.gaze-validation-results {
-  overflow: auto;
-  margin-top: 12px;
-  font-size: .75rem;
-}
-
-.gaze-validation-results table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-top: 8px;
-  font-variant-numeric: tabular-nums;
-}
-
-.gaze-validation-results th,.gaze-validation-results td {
-  padding: 6px;
-  text-align: left;
-  border-bottom: 1px solid var(--card-cell-border);
 }

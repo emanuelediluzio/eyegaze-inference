@@ -1,32 +1,25 @@
 """Install the gaze overlay into an existing N2uCore checkout (Python 3.10+)."""
 import argparse
 import ast
-import hashlib
 import json
-import re
 import shutil
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 IRIDE = 'N2uCore/res/web/iride/'
-MERGED = ['N2uCore/res/dyndefs.json', IRIDE + 'schema-ui.json']
-FRAMEWORK_SOURCES = {
-    'N2uCore/res/web/iride/lib/render/decoders/gaze-decoder.js': (
-        '5af93e008197a40de92403b6bc1e48eba24c0fcf9dcbe5293555cba20c869fca',
-        '0101aa2b77bcc4ef087bfc490cbb99f98c58060380554789e6f571f77731a808',
-    ),
+MERGED = ['N2uCore/res/dyndefs.json', 'N2uCore/res/uidefs.json', IRIDE + 'schema-ui.json']
+# Iride hooks the gaze panels need; they are part of the framework Iride (N2uCore_dev), not of this package
+IRIDE_HOOKS = {
+    IRIDE + 'app/run/card.js': 'panels/node-panels.js',
+    IRIDE + 'app/run/output-cards.js': 'panels/node-panels.js',
+    IRIDE + 'app/run/card-board.js': 'panels/panel-sessions.js',
+    IRIDE + 'index.html': 'gaze-panels.css',
+    IRIDE + 'lib/render/data-worker.js': 'gaze-decoder.js',
+    IRIDE + 'lib/render/renderers/overlay-renderer.js': 'gaze-direction-drawing.js',
+    IRIDE + 'app/texts/en.js': '"gaze.calibrate"',
+    IRIDE + 'app/texts/it.js': '"gaze.calibrate"',
 }
-
-
-def edit_once(text, before, after, filename):
-    if after in text:
-        return text
-    candidates = [before] if isinstance(before, str) else before
-    matches = [candidate for candidate in candidates if text.count(candidate) == 1]
-    if len(matches) != 1:
-        raise ValueError(f'{filename}: incompatible framework; review the integration manually')
-    return text.replace(matches[0], after, 1)
 
 
 def plan(target):
@@ -39,11 +32,9 @@ def plan(target):
                  if isinstance(node, ast.FunctionDef)}
     if not {'resolveComputeResources', 'releaseComputeCache'} <= functions:
         raise ValueError('Framework memprovider.py must provide resolveComputeResources and releaseComputeCache; framework ML changes are distributed separately')
-    for rel, fingerprints in FRAMEWORK_SOURCES.items():
-        current = (target / rel).read_text(encoding='utf-8')
-        incoming = (ROOT / rel).read_text(encoding='utf-8')
-        if current != incoming and hashlib.sha256(current.encode()).hexdigest() not in fingerprints:
-            raise ValueError(f'{rel}: unknown framework source; review the integration manually')
+    for rel, hook in IRIDE_HOOKS.items():
+        if not (target / rel).is_file() or hook not in (target / rel).read_text(encoding='utf-8'):
+            raise ValueError(f'{rel}: no gaze panel hook ({hook}); the target Iride must be the N2uCore_dev one')
     changes = {}
     for folder in ['N2uCore', 'examples', 'tests', 'tools', 'docs']:
         for source in sorted((ROOT / folder).rglob('*')):
@@ -55,39 +46,12 @@ def plan(target):
             if rel in MERGED:
                 current = json.loads((target / rel).read_text(encoding='utf-8'))
                 extra = json.loads(source.read_text(encoding='utf-8'))
-                if 'nodes' in extra:
-                    current['nodes'].update(extra['nodes'])
-                else:
-                    current.update(extra)
+                if all(current.get(key) == value for key, value in extra.items()):
+                    continue
+                current.update(extra)
                 changes[rel] = (json.dumps(current, indent=2, ensure_ascii=False) + '\n').encode()
             else:
                 changes[rel] = source.read_bytes()
-    edits = {
-        IRIDE + 'lib/ui/forms/node-panels.js': [
-            ('import { SwarmPanel } from "./swarm-panel.js";',
-             'import { ScreenGazePanel } from "./screen-gaze-panel.js";\nimport { SwarmPanel } from "./swarm-panel.js";'),
-            ('static PANELS = [',
-             'static PANELS = [\n    ["screenpointofgaze.screenpointofgaze", ScreenGazePanel],')],
-    }
-    hook_path = ROOT / 'framework-hooks.json'
-    if hook_path.is_file():
-        for rel, replacements in json.loads(hook_path.read_text(encoding='utf-8')).items():
-            edits.setdefault(rel, []).extend(replacements)
-    for rel, replacements in edits.items():
-        text = (target / rel).read_text(encoding='utf-8')
-        for before, after in replacements:
-            if rel.startswith(IRIDE + 'app/texts/') and isinstance(before, str) and before.startswith('export const '):
-                keys = re.findall(r'^\s*"(gaze\.[^"]+)"\s*:', after, re.MULTILINE)
-                counts = [len(re.findall(r'^\s*"' + re.escape(key) + r'"\s*:', text, re.MULTILINE)) for key in keys]
-                if keys and all(count == 1 for count in counts):
-                    continue
-                if any(counts):
-                    raise ValueError(f'{rel}: partial or duplicated gaze translations; review manually')
-            # Imports/registrations may already be present alongside other panels.
-            if rel.endswith('node-panels.js') and after.splitlines()[-1 if before.startswith('static') else 0].strip() in text:
-                continue
-            text = edit_once(text, before, after, rel)
-        changes[rel] = text.encode()
     return {rel: data for rel, data in changes.items()
             if not (target / rel).is_file() or (target / rel).read_bytes() != data}
 

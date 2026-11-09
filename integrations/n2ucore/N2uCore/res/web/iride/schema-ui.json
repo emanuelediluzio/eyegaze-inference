@@ -1,27 +1,65 @@
 {
-  "nodes": {
-    "N2uCore.dyn.eyegaze.GazeDirection": {
-      "group": "/Inference Models/Eye Gaze",
-      "label": "Gaze Direction",
-      "paletteLabel": "Gaze Direction",
-      "visibility": "beginner",
-      "PROPS_SCHEMA": {
-        "device": {
-          "label": "Computation Device",
-          "visibility": "beginner"
-        },
-        "maxFps": {
-          "label": "Maximum inference FPS",
-          "visibility": "beginner"
-        }
+  "N2uCore.dyn.eyegaze.GazeDirection": {
+    "group": "/Inference Models/Eye Gaze",
+    "paletteLabel": "Visible Camera",
+    "label": "Gaze Direction",
+    "visibility": "beginner",
+    "PROPS_SCHEMA": {
+      "device": {
+        "label": "Computation Device"
       }
-    },
-    "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze": {
-      "group": "/Inference Models/Eye Gaze",
-      "label": "Screen Point of Gaze",
-      "paletteLabel": "Screen Point of Gaze",
-      "visibility": "beginner",
-      "PROPS_SCHEMA": {}
+    }
+  },
+  "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze": {
+    "group": "/Inference Models/Eye Gaze",
+    "paletteLabel": "Gaze Direction",
+    "label": "Screen Point of Gaze",
+    "visibility": "beginner",
+    "commands": {
+      "calibrationStatus": {
+        "label": "Calibration Status",
+        "visibility": "developer"
+      },
+      "getCalibration": {
+        "label": "Get Calibration",
+        "visibility": "developer"
+      },
+      "beginCalibration": {
+        "label": "Begin Calibration",
+        "visibility": "developer",
+        "args": {
+          "screen_w": {
+            "label": "Screen Width"
+          },
+          "screen_h": {
+            "label": "Screen Height"
+          }
+        }
+      },
+      "calibrationTarget": {
+        "label": "Calibration Target",
+        "visibility": "developer",
+        "args": {
+          "x": {
+            "label": "X"
+          },
+          "y": {
+            "label": "Y"
+          }
+        }
+      },
+      "finishTarget": {
+        "label": "Finish Target",
+        "visibility": "developer"
+      },
+      "fitCalibration": {
+        "label": "Fit Calibration",
+        "visibility": "developer"
+      },
+      "cancelCalibration": {
+        "label": "Cancel Calibration",
+        "visibility": "developer"
+      }
     }
   }
 }

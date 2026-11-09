@@ -55,7 +55,7 @@ def benchmark(checkpoint, imagePath, deviceName, frames=30, warmup=5, maxFps=0):
         loadSecs = time.perf_counter() - started
         loadedRss = process.memory_info().rss
         for _ in range(warmup):
-            engine.analyze(rgb)
+            engine.analyze(rgb, time.time_ns() // 1000)
         latencies = []
         statuses = Counter()
         peakDevice = deviceMemory()
@@ -63,7 +63,7 @@ def benchmark(checkpoint, imagePath, deviceName, frames=30, warmup=5, maxFps=0):
         started = time.perf_counter()
         for _ in range(frames):
             frameStart = time.perf_counter()
-            result = engine.analyze(rgb)
+            result = engine.analyze(rgb, time.time_ns() // 1000)
             latencies.append(time.perf_counter() - frameStart)
             statuses[result["status"]] += 1
             memory = deviceMemory()

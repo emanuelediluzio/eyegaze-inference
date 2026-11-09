@@ -1,0 +1,58 @@
+{
+  "N2uCore.dyn.eyegaze.GazeDirection": {
+    "group": "/Inference Models/Eye Gaze",
+    "paletteLabel": "Visible Camera",
+    "label": "Gaze Direction",
+    "visibility": "beginner",
+    "PROPS_SCHEMA": {
+      "device": {
+        "label": "Computation Device"
+      }
+    }
+  },
+  "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze": {
+    "group": "/Inference Models/Eye Gaze",
+    "paletteLabel": "Gaze Direction",
+    "label": "Screen Point of Gaze",
+    "visibility": "beginner",
+    "commands": {
+      "calibrationStatus": {
+        "label": "Calibration Status"
+      },
+      "getCalibration": {
+        "label": "Get Calibration"
+      },
+      "beginCalibration": {
+        "label": "Begin Calibration",
+        "args": {
+          "screen_w": {
+            "label": "Screen Width"
+          },
+          "screen_h": {
+            "label": "Screen Height"
+          }
+        }
+      },
+      "calibrationTarget": {
+        "label": "Calibration Target",
+        "args": {
+          "x": {
+            "label": "X"
+          },
+          "y": {
+            "label": "Y"
+          }
+        }
+      },
+      "finishTarget": {
+        "label": "Finish Target"
+      },
+      "fitCalibration": {
+        "label": "Fit Calibration"
+      },
+      "cancelCalibration": {
+        "label": "Cancel Calibration"
+      }
+    }
+  }
+}

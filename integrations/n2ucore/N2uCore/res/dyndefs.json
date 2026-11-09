@@ -4,7 +4,7 @@
     "module": "N2uCore.dyn.eyegaze",
     "class": "GazeDirection",
     "label": "Gaze Direction",
-    "description": "RGB face to gaze yaw/pitch, landmark-derived head roll and unit 3D gaze vector. Fixed GazeDINO model, automatic or CPU compute device and configurable maximum inference FPS.",
+    "description": "RGB face to gaze yaw/pitch and unit 3D gaze vector, eye position and size for the screen point, plus a real-time quality score (face size, stability) with distance hints. Analyses only the nearest face. Fixed GazeDINO model, CPU or GPU compute device; it analyses as many frames per second as the device sustains, at most the camera rate and 60.",
     "PROPS_SCHEMA": {
       "device": {
         "type": "ENUM",
@@ -14,12 +14,6 @@
           "GPU"
         ],
         "default": "GPU"
-      },
-      "maxFps": {
-        "type": "INT",
-        "min": 1,
-        "max": 120,
-        "default": 15
       }
     },
     "inputs": [
@@ -32,6 +26,10 @@
       {
         "name": "GazeDirection",
         "type": "GAZE"
+      },
+      {
+        "name": "GazePoints",
+        "type": "POINTS_2D"
       }
     ],
     "commands": {}

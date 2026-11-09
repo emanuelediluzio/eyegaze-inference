@@ -7,9 +7,9 @@ This guide is for developers integrating the two nodes into an existing **N2uCor
 | What you need | Location | Destination / purpose |
 |---|---|---|
 | **Minimal `gazedino_inference.joblib` model** | **[Direct GitHub download](https://github.com/emanuelediluzio/eyegaze-inference/releases/download/inference-v1/gazedino_inference.joblib)** · **[Direct Gitea download](http://192.168.70.200:3000/attachments/8a538e7d-0727-4b6b-81d3-77c27c6deb06)** · [release details](http://192.168.70.200:3000/ediluzio/eyegaze-inference/releases/tag/inference-v1) | Copy and rename to **`N2uCore/res/models/gazedino/model.joblib`** in the target framework |
-| **Gaze Direction node** | [N2uCore/dyn/eyegaze.py](N2uCore/dyn/eyegaze.py) | `GazeDirection(MlDevice)` and `EyeGazeTicker(MlTicker)`: video to yaw/pitch, MediaPipe head roll and a 3D vector |
+| **Gaze Direction node** | [N2uCore/dyn/eyegaze.py](N2uCore/dyn/eyegaze.py) | `GazeDirection(MlDevice)` and `GazeDirectionTicker(MlTicker)`: video to yaw/pitch, quality, eye points and iris position |
 | **Screen Point of Gaze node** | [N2uCore/dyn/screenpointofgaze.py](N2uCore/dyn/screenpointofgaze.py) | `ScreenPointOfGaze(SwDevice)`: gaze direction to a screen point after calibration |
-| **Complete installation** | [install.py](install.py) · [framework-hooks.json](framework-hooks.json) | Installs engines, catalogue entries, Iride panels and the required framework hooks |
+| **Complete installation** | [install.py](install.py) | Installs engines, catalogue entries and Iride panels into an N2uCore_dev checkout |
 | **Example pipeline** | [examples/eyegaze/gazedino.iride.json](examples/eyegaze/gazedino.iride.json) | Import into Iride and select the target device’s SysInit and webcam |
 
 **The joblib is a release attachment and is not included in a Git clone.** Its size is **324,174,954 bytes** (about 324 MB / 309 MiB), approximately **69% smaller** than the 1,044,671,152-byte training checkpoint.
@@ -24,7 +24,7 @@ For a working integration, use **the complete contents of this directory**, not 
 
 ## 1. Install into the existing framework
 
-Prerequisites: an N2uCore checkout with `MlDevice`, `MlTicker`, `WorkerFlowInput`, the dynamic node catalogue and Iride. Its existing `memprovider.py` must already expose `resolveComputeResources()` and `releaseComputeCache()`. Framework ML changes are a separate prerequisite and are not included or installed by this Eye Gaze package. Use the Python environment configured in the **SysInit that will execute the nodes**.
+Prerequisites: an **N2uCore_dev** checkout (`mcandelori/N2uCore_dev`) with `MlDevice`, `MlTicker`, `WorkerFlowInput`, the dynamic node catalogue and its Iride, which already hosts the gaze panels (node panels in `app/run/panels/`, panel sessions, gaze decoder, overlay drawing and the gaze EN/IT texts). Its existing `memprovider.py` must already expose `resolveComputeResources()` and `releaseComputeCache()`. Framework ML changes are a separate prerequisite and are not included or installed by this Eye Gaze package. Use the Python environment configured in the **SysInit that will execute the nodes**.
 
 From the root of the `eyegaze-inference` repository, with the pipeline stopped:
 
@@ -36,7 +36,7 @@ python integrations/n2ucore/install.py "/path/to/n2ucore" --apply
 
 On Windows, a target path could be `C:/repos/n2ucore`. Running without `--apply` previews the changes. Running with `--apply` checks all integration points before writing and backs up existing files under `.gaze-integration-backups/`. An upgrade also backs up and removes the previous integration engine `gazedino.py`; the implementation now lives in `gazedinoengine.py`.
 
-The installer merges the two nodes into the existing catalogues while preserving other entries. The JSON files under `N2uCore/res/` are **fragments to merge**, not complete replacement catalogues. Shared Card/CardBoard hooks, panel registration are declared in `framework-hooks.json` and `install.py`. If the framework is incompatible, preflight stops without writing. Repeating the installation against the same code produces no further changes.
+The installer merges the two nodes into the existing catalogues while preserving other entries. The JSON files under `N2uCore/res/` are **fragments to merge**, not complete replacement catalogues. The Iride hooks are not installed by this package: they are part of the N2uCore_dev Iride, and preflight checks that they are present (`IRIDE_HOOKS` in `install.py`). If the framework is incompatible, preflight stops without writing. On an up-to-date N2uCore_dev the gaze files are already identical and only the package-only examples, tools, docs and `test_gazeartifact.py` are added. Repeating the installation against the same code produces no further changes.
 
 The installer does not start services, install weights or change the webcam configuration. This directory is a framework overlay: do not add it to `PYTHONPATH` as an alternative framework.
 
@@ -63,13 +63,13 @@ GazeDirection.GazeDirection → ScreenPointOfGaze.GazeDirection
 
 Import the [portable pipeline](examples/eyegaze/gazedino.iride.json), select the correct SysInit and verify the webcam ID **on the computer executing WebCam**. The ID depends on device enumeration on that machine.
 
-The direction node uses the fixed minimal joblib above, EMA alpha 0.25 and a 600-second idle unload. Its two standard settings are the maximum inference FPS (1–120, default 15) and the framework Computation Device selector (`CPU` or `GPU`, default `GPU`). `CPU` selects CPU explicitly; `GPU` requests automatic selection using the engine’s declared CUDA/XPU/MPS/CPU capability order. The screen node accepts input captured within 2 seconds, always starts uncalibrated and has no configuration fields.
+The direction node uses the fixed minimal joblib above, EMA smoothing over time (alpha 0.25 at 15 estimates per second) and a 600-second idle unload. Its only setting is the framework Computation Device selector (`CPU` or `GPU`, default `GPU`). `CPU` selects CPU explicitly; `GPU` requests automatic selection using the engine’s declared CUDA/XPU/MPS/CPU capability order, in half precision. There is no FPS cap: the model sets the pace, one frame at a time, and frames arriving meanwhile are dropped. The screen node always starts uncalibrated and has no configuration fields.
 
 After installation, restart services using the device’s normal procedure, with the pipeline stopped, and reload Iride without cache. Then start the pipeline.
 
 Both nodes follow the input-dependent announcement policy used by the other processing nodes: they wait for their configured source, announce only after subscribing to its channel, stop announcing if that connection drops, and resume after reconnection. Gaze Direction waits for the webcam; Screen Point of Gaze waits for Gaze Direction. This indicates input connectivity, not face detection or calibration readiness.
 
-Open Gaze Direction to see the video, face box, eye markers and gaze arrows; technical details are collapsible. Open Screen Point of Gaze and choose **Calibrate 16 points** to run the single standard calibration. To use the whole monitor, enter fullscreen first and calibrate in that mode.
+Open Gaze Direction to see the video with the gaze points (`GazePoints` channel), the estimate quality and the head position hints. Open Screen Point of Gaze and choose **Calibrate 16 points** to run the single standard calibration. To use the whole monitor, enter fullscreen first and calibrate in that mode.
 
 The **Show point on page** checkbox belongs to the pipeline session: closing, hiding or minimizing the card leaves the dot active; reopening it restores the selected checkbox. Unchecking it hides the dot. Stopping the pipeline clears the session. Missing faces, stale data, disconnections and a hidden page temporarily hide the dot without changing the preference. Changes to window size, window position or display density require recalibration.
 
@@ -83,42 +83,41 @@ For channel contracts and session calibration details, see [examples/eyegaze/REA
 
 ## Integration files and directory hierarchy
 
-These paths are relative to this directory and match their destinations in the N2uCore checkout:
+These paths are relative to this directory and match their destinations in the N2uCore_dev checkout; every file is identical to N2uCore_dev:
 
 ```text
 N2uCore/
-  dyn/eyegaze.py                         ML node and dedicated ticker
-  dyn/screenpointofgaze.py               Projection and calibration node
-  inference/gazedinoengine.py            Object-based engine, composed network and face detection
+  dyn/eyegaze.py                         GazeDirection (MlDevice) and GazeDirectionTicker (MlTicker)
+  dyn/screenpointofgaze.py               ScreenPointOfGaze (SwDevice): calibration and projection
+  inference/gazedinoengine.py            Engine: face detection, network, smoothing, quality, iris position
   inference/gazeartifact.py              Joblib contract, loader and exporter
-  inference/screengaze.py                Calibration fitting and projection
+  inference/screengaze.py                Calibration fit (angles plus iris correction) and projection
   res/dyndefs.json                       Catalogue fragment for the two nodes
+  res/uidefs.json                        UI catalogue fragment for the two nodes
   res/web/iride/schema-ui.json           Iride settings fragment
-  res/web/iride/lib/ui/forms/
-    gaze-direction-panel.js             Video and direction card
-    screen-gaze-panel.js                 Calibration card and controls
-    screen-gaze-session.js               Dot independent of card visibility
-    panel-sessions.js                    Pipeline-owned panel state
-    gaze-ui.js                          Shared DataSocket views and helpers
+  res/web/iride/app/run/panels/          Gaze Direction and Screen Point of Gaze panels, calibration,
+                                         validation, sessions and their helpers
+  res/web/iride/lib/render/decoders/gaze-decoder.js
+  res/web/iride/lib/render/renderers/gaze-direction-drawing.js
   res/web/iride/css/app/gaze-panels.css   Card and dot styles
 examples/eyegaze/                        Pipelines, sketches and documentation
 tests/dyn/                              Python tests
-tests/web/                              UI tests
+tools/benchmark_eyegaze.py               Engine benchmark
 tools/export_eyegaze.py                  Original checkpoint exporter
 tools/verify_eyegaze_iride.py            Full transport integration test
 ```
 
-**Computation Device** is the framework's standard `device` property, the same `CPU` / `GPU` selector used by Thermal Tracking and Voice, with `GPU` as the default. `GPU` requests automatic selection among the engine's supported PyTorch backends (CUDA, MPS, CPU fallback); `CPU` forces this model onto CPU even when a GPU is available. The value is saved in the pipeline and applies at the next Start. Pipelines saved with the previous `auto` / `cpu` values must be updated to `GPU` / `CPU`. Eye Gaze uses no custom `optional` metadata or validation bypass. The installer removes only the custom text-field and UI extensions introduced by earlier gaze integration work, while restoring or preserving the framework's original optional-list validation and empty-subnodes rule for standalone agents. Screen Point of Gaze is already CPU-only and has no redundant device setting.
+**Computation Device** is the framework's standard `device` property, the same `CPU` / `GPU` selector used by Thermal Tracking and Voice, with `GPU` as the default. `GPU` requests automatic selection among the engine's supported PyTorch backends (CUDA, MPS, CPU fallback); `CPU` forces this model onto CPU even when a GPU is available. The value is saved in the pipeline and applies at the next Start. Pipelines saved with the previous `auto` / `cpu` values show `auto (invalid)` in Iride and must be updated to `GPU` / `CPU`. Eye Gaze uses no custom `optional` metadata or validation bypass. The installer removes only the custom text-field and UI extensions introduced by earlier gaze integration work, while restoring or preserving the framework's original optional-list validation and empty-subnodes rule for standalone agents. Screen Point of Gaze is already CPU-only and has no redundant device setting.
 
-Memory handling follows the framework provider contract used by PhysioDOM ML. The shared `resolveComputeResources()` function selects a compute device and matching memory provider. Gaze Direction and the standalone GazeDINO engine declare CUDA/XPU/MPS/CPU capabilities. The node passes the selected provider and device, fixed model resource and idle timeout into `EyeGazeTicker`; model loading remains on the ML thread. CUDA and AMD ROCm use `CudaMemoryProvider`, Intel XPU uses `AcceleratorMemoryProvider`, and CPU/Apple MPS use `SystemMemoryProvider`. Cache release uses the common `releaseComputeCache()` helper. Physical CPU/MPS inference is verified; other accelerators have simulated coverage and need hardware validation.
+Memory handling follows the framework provider contract used by PhysioDOM ML. The shared `resolveComputeResources()` function selects a compute device and matching memory provider. Gaze Direction and the standalone GazeDINO engine declare CUDA/XPU/MPS/CPU capabilities. The node passes the selected provider and device, fixed model resource and idle timeout into `GazeDirectionTicker`; model loading remains on the ML thread. CUDA and AMD ROCm use `CudaMemoryProvider`, Intel XPU uses `AcceleratorMemoryProvider`, and CPU/Apple MPS use `SystemMemoryProvider`. Cache release uses the common `releaseComputeCache()` helper. Physical CPU/MPS inference is verified; other accelerators have simulated coverage and need hardware validation.
 
-The shared memory implementation belongs to the destination framework at `N2uCore/dyn/wrk/memprovider.py`. This installer checks that the required resource functions exist and never replaces that file. The schema-aware `lib/render/decoders/gaze-decoder.js` source is also guarded by a known-source fingerprint; the worker receives a small hook for raw GAZE card sessions. Before replacing it, the installer checks the target against known source fingerprints or the exact installed version. Iride hooks target the current Card/CardBoard lifecycle. Unknown source changes stop preflight without writes. Shared resource handling uses native or general PyTorch memory APIs; unavailable backends or unreadable memory allow automatic CPU fallback, while genuine low memory still blocks model loading through the unchanged `MlDevice`/`MlTicker` guard. `SystemMemoryProvider` reads psutil directly across operating systems. CPU-only callers do not import Torch through the resource helpers. Model weights and physiological buffers are unchanged. Runtime failures return logged neutral results; the node and ticker check these outcomes. Screen Point uses one inherited start and estimates clock offset from monotonic arrivals for calibration and freshness. See [runtime and clock contracts](docs/eyegaze-node-review.md#runtime-failure-and-clock-contracts) for details and limits.
+The shared memory implementation belongs to the destination framework at `N2uCore/dyn/wrk/memprovider.py`. This installer checks that the required resource functions exist and never replaces that file. Shared resource handling uses native or general PyTorch memory APIs; unavailable backends or unreadable memory allow automatic CPU fallback, while genuine low memory still blocks model loading through the unchanged `MlDevice`/`MlTicker` guard. `SystemMemoryProvider` reads psutil directly across operating systems. CPU-only callers do not import Torch through the resource helpers. Model weights and physiological buffers are unchanged. Runtime failures return logged neutral results; the node and ticker check these outcomes. Screen Point uses one inherited start and estimates clock offset from monotonic arrivals for calibration and freshness. See [runtime and clock contracts](docs/eyegaze-node-review.md#runtime-failure-and-clock-contracts) for details and limits.
 
-Gaze Direction follows the **`MlDevice` / `MlTicker`** pattern: decoding, face detection and PyTorch inference run on the ML thread, with one frame in flight and obsolete frames dropped. The joblib format does not turn the network into a tabular model. Screen Point of Gaze uses **`SwDevice`** and NumPy; it does not load the neural network. Iride communicates only with **uinode**, using the framework’s WebSocket channels; nodes communicate through Flow.
+Gaze Direction follows the **`MlDevice` / `MlTicker`** pattern: the node decodes the frame and sends one at a time to the ML thread, which runs face detection and PyTorch inference; frames arriving meanwhile are dropped. The joblib format does not turn the network into a tabular model. Screen Point of Gaze uses **`SwDevice`** and NumPy; it does not load the neural network. Iride communicates only with **uinode**, using the framework’s WebSocket channels; nodes communicate through Flow.
 
 The engine is `GazeDinoEngine(object)` in `gazedinoengine.py`. A standard PyTorch `Sequential` composes the existing backbone and head; there is no nested network subclass. Checkpoint keys remain `backbone.*` and `head.*`. Internal instance state uses underscore-prefixed camelCase names, dependencies are declared explicitly at module scope, as in the framework’s voice node. Node and ticker construction do not load weights or create a face tracker; both are created by the ML ticker’s model-load hook. Existing snake_case JSON field names are retained as the channel protocol, not Python variable names.
 
-Yaw and pitch are neural-network predictions. `roll_rad` and `roll_deg` describe head tilt measured from MediaPipe Face Mesh outer-eye landmarks 33 and 263, using pixel coordinates and clockwise-positive image angles. `roll_source` is `head_landmarks`. This is an image-plane tilt estimate, not a full 3D head-pose Euler angle, a third learned network output or ocular torsion; it does not change the yaw/pitch gaze vector or screen calibration. Missing or degenerate eye landmarks yield null roll values. No model retraining or new joblib is needed. For full 3D head pose, a separate geometry-based pose estimate is required; MediaPipe documents a [face geometry transformation pipeline](https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/face_mesh.md#face-transform-module).
+Yaw and pitch are neural-network predictions. The engine also reports the eye positions in the image (`eyes_px`), a quality score with a head position hint, and `iris`: the iris position between the eye corners (MediaPipe Face Mesh landmarks 468/133/33 and 473/362/263, in eye widths, mean of both eyes) and the eye openness. The screen calibration uses the iris as a light correction to the angles (`IRIS_WEIGHT` 0.25, ridge only on the iris terms), which reduces the drift of the dot when the head moves. No model retraining or new joblib is needed.
 
 ## Joblib contents and export
 
@@ -147,19 +146,18 @@ The exporter reads the generated file back and compares every weight against the
 
 - **183 float32 tensors identical** to the original checkpoint, with no quantization or weight changes.
 - **Identical predictions on five crops** of a public image, with a maximum difference of 0 radians on MPS, verified locally and on the Mac mini. [Parity and checksum report](examples/eyegaze/inference-export-verification.json).
+- **Full integration test on N2uCore_dev (9 November 2026)**: `tools/verify_eyegaze_iride.py` passes on a clean N2uCore_dev copy with this package installed (start, three gaze samples with iris, uncalibrated screen point, guided collection, cancel, stop to IDLE). On macOS the services need a LAN `--address` and, as for any N2uCore pair on one Mac, the announce socket must allow `SO_REUSEPORT`.
 - **Historical full Mac mini integration test (before the local session-only calibration revision)** using a test video: WebSocket → uinode → sysinit → WebCam → Gaze Direction/MlTicker → Screen Point of Gaze → WebSocket, including projection checks and shutdown to IDLE. [Test report](examples/eyegaze/minimal-node-integration-test.json).
 - Verified environment: Python 3.11, MediaPipe 0.10.21, NumPy 1.26.4 and MPS. Select torch/torchvision builds suited to the target hardware. Windows and Linux have not yet been certified through equivalent tests.
 
-The file reduction removes training state; the network remains DINOv2 ViT-B/14. It is not evidence of a lower computational cost. A Mac mini M1 benchmark measured approximately 100–150 ms per full analysis; the configurable maximum inference FPS setting (default 15) is a ceiling. Export parity is not a new accuracy validation: pointing accuracy must be checked with the actual person and monitor, using targets excluded from calibration.
+The file reduction removes training state; the network remains DINOv2 ViT-B/14. It is not evidence of a lower computational cost. A Mac mini M1 benchmark measured approximately 100–150 ms per full analysis in fp32; the node runs as fast as the model allows, one frame at a time. Export parity is not a new accuracy validation: pointing accuracy must be checked with the actual person and monitor, using targets excluded from calibration.
 
 To repeat the checks, run from the **N2uCore checkout root** in its Python environment:
 
 ```sh
 python -m pip install -r /path/to/eyegaze-inference/integrations/n2ucore/requirements-dev.txt
-python -m pytest tests/dyn/test_gazeartifact.py tests/dyn/test_eyegaze.py tests/dyn/test_screenpointofgaze.py -q
-python -m pytest tests/dyn/wrk/test_accelerator_memory.py tests/dyn/wrk/test_compute_resources.py tests/dyn/wrk/test_memprovider_portability.py tests/dyn/wrk/test_memprovider.py tests/dyn/wrk/test_mldevice.py tests/dyn/test_eyegaze.py -q
-node --test tests/web/gaze-direction-panel.test.mjs tests/web/gaze-calibration.test.mjs tests/web/screen-gaze-panel.test.mjs tests/web/optional-gaze-fields.test.mjs
-python tools/verify_eyegaze_iride.py --fixture /path/to/face.png
+python -m pytest tests/dyn/test_gazeartifact.py tests/dyn/test_eyegaze.py tests/dyn/test_gaze_quality.py tests/dyn/test_screen_calibration.py tests/dyn/test_screenpointofgaze.py -q
+python tools/verify_eyegaze_iride.py --fixture /path/to/face.png --address <LAN address>
 ```
 
 The full test repeats a public image in a test video and does not require a physical webcam. Test dependencies are separate from runtime dependencies.
@@ -179,13 +177,15 @@ The report records viewport geometry, calibration point count, date, per-target 
 
 ## Inference rate and gaze channels
 
-**Maximum inference FPS** (`maxFps`) is a standard integer setting from 1 to 120, defaulting to 15. It limits dispatch of fresh frames, keeps one inference in flight and drops excess input. It is not a 60 ms timer. Actual throughput also depends on the camera and model. The model resource remains fixed. For guided calibration, start with at least 5 FPS; the current three-sample collection window cannot be filled at 1 FPS.
+There is no inference FPS setting: the node keeps one frame in flight and drops the frames that arrive meanwhile, so the rate is set by the model. Both output channels declare the input rate.
 
-Both `GazeDirection` and `ScreenPoint` use the existing `GAZE` channel type, following Tobii Glasses. Their distinct JSON schemas retain angle versus browser-pixel semantics and do not fabricate Tobii pupil data or normalized scene gaze. Install the node, catalogue, decoder and worker changes together, restart the affected pipeline and reload Iride. Existing pipeline edges retain the same channel names; missing `maxFps` values receive the normal schema default. External consumers must dispatch by schema instead of assuming every GAZE payload is Tobii data.
+`GazeDirection` (schema `gaze-direction.v1`) and `ScreenPoint` (schema `screen-point-of-gaze.v1`) use the existing `GAZE` channel type; `GazePoints` (`POINTS_2D`) carries the eye midpoint and the gaze direction projected on the image for the card. External consumers must dispatch by schema instead of assuming every GAZE payload is Tobii data.
 
 See [the node review and Marco frontend handoff](docs/eyegaze-node-review.md) for source paths, compatibility checks and local CPU/MPS measurements. Benchmark tool: `tools/benchmark_eyegaze.py`; raw reports: `examples/eyegaze/benchmarks/`. This work is local only. Live GPU-to-CPU recovery and multi-model scheduling are deferred.
 
-The gaze panels use the framework’s existing button, input and toggle classes, inherited fonts, central `Texts` EN/IT tables and theme tokens. The installer adds gaze translation entries to the existing app language tables; it does not replace those tables. The user will coordinate frontend review with Marco later.
+The gaze panels are part of the N2uCore_dev Iride and use its button, input and toggle classes, inherited fonts, central `Texts` EN/IT tables and theme tokens.
 
 
-Screen Point emits the existing GAZE JSON fields: normalized viewport gaze2d plus eyeleft/eyeright pupildiameter set to null. The existing framework gaze converter reads these coordinates without changes. Screen pixel fields and the session/page UI remain available. The normalized coordinates refer to the calibrated browser viewport; pupil measurements and scene-camera coordinates are not inferred. Gaze Direction keeps its angular schema. See docs/eyegaze-node-review.md for compatibility tests, checklist status and the latest Mac measurement.
+
+Screen Point publishes `status`, `quality`, `screen_xy_px`, `screen_size_px`, `gaze2d` (viewport-normalized), `calibration_drift` and `frame_aspect`; `screen_xy_px` and `gaze2d` are null until the node is calibrated. Pupil measurements and scene-camera coordinates are not inferred.
+

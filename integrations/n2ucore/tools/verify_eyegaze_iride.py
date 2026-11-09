@@ -25,6 +25,8 @@ import websocket
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from N2uCore.miniflow.auth import FlowServiceAuthenticator
+
 class WS:
     def __init__(self,url):
         self.ws=websocket.create_connection(url,timeout=2)
@@ -60,6 +62,11 @@ class WS:
                 if not msg.get('status'):raise RuntimeError(msg)
                 return msg.get('val')
         raise TimeoutError(cmd)
+    def login(self,user):
+        seed=self.call('getSeed')['seed']
+        seed=struct.unpack('<q',bytes.fromhex(seed))[0] if isinstance(seed,str) else seed
+        self.call('login',{'user':user['name'],'token':FlowServiceAuthenticator.challengeToken(seed,user['token'])})
+        return self
     def close(self):
         self.closed=True
         self.ws.close()
@@ -71,6 +78,7 @@ def main():
     parser.add_argument('--sysinit',default='SysInit',help='Executor for the live-server test')
     parser.add_argument('--palette-defaults',action='store_true',help='Use GazeDirection defaults from the actual server catalogue')
     parser.add_argument('--fixture',type=Path,required=True)
+    parser.add_argument('--address',default='127.0.0.1',help='Service address; on macOS a LAN address, loopback announces are not delivered')
     parser.add_argument('--out',type=Path,default=ROOT/'examples/eyegaze/iride-integration-test.json')
     args=parser.parse_args()
     frame=cv2.imread(str(args.fixture));assert frame is not None,'Unreadable fixture'
@@ -90,22 +98,23 @@ def main():
         uiport,sysport=[s.getsockname()[1] for s in holders]
         for sock in holders:sock.close()
         base=json.loads((ROOT/'examples/dynamic-sketches/uinode-cfg.json').read_text())['network']
-        base['address']='127.0.0.1'
+        base['address']=args.address
+        user=base['userland'][0]
         unique=secrets.token_hex(4);sysname=args.sysinit if args.server_url else 'GazeTestSys'+unique
         cfgs=[{'module':'N2uCore.dyn.sysinit','class':'Init','name':sysname,
                'network':{**base,'port':sysport},'props':{'sketches':[],
                'runDirectory':str(folder/'nodes'),'vEnvPath':str(Path(sys.executable).parent.parent)}},
               {'module':'N2uCore.dyn.uinode','class':'UINode','name':'GazeTestUI'+unique,
                'network':{**base,'port':uiport},'props':{'workingFolder':str(folder/'ui'),
-               'sysinits':[{'name':sysname,'address':'127.0.0.1','port':sysport}]}}]
+               'sysinits':[{'name':sysname,'address':args.address,'port':sysport}]}}]
         env={**os.environ,'PYTHONPATH':str(ROOT)}
-        server_url=args.server_url.rstrip('/') or f'ws://127.0.0.1:{uiport}'
+        server_url=args.server_url.rstrip('/') or f'ws://{args.address}:{uiport}'
         def control_state():
             nonlocal ctrl,reconnects
             try:return ctrl.call('getPipelineState')
             except (websocket.WebSocketException,OSError):
                 ctrl.close()
-                ctrl=WS(server_url+'/dashWS')
+                ctrl=WS(server_url+'/dashWS').login(user)
                 deadline=time.monotonic()+15
                 while True:
                     try:
@@ -128,12 +137,12 @@ def main():
             deadline=time.monotonic()+30
             while ctrl is None:
                 if any(p.poll() is not None for p in processes):raise RuntimeError('Service exited')
-                try:ctrl=WS(server_url+'/dashWS')
+                try:ctrl=WS(server_url+'/dashWS').login(user)
                 except OSError:
                     if time.monotonic()>deadline:raise
                     time.sleep(.2)
             assert ctrl.call('getPipelineState')['state']=='IDLE','Existing Iride pipeline is active; live test refused'
-            ctrl.call('registerSocketRole',{'role':'ControlCollector'})
+            frontendId=ctrl.call('registerSocketRole',{'role':'ControlCollector'})['frontendId']
             deadline=time.monotonic()+30
             while not all(x.get('connected') for x in ctrl.call('getSysinits')):
                 assert time.monotonic()<deadline,'sysinit did not connect'
@@ -159,8 +168,9 @@ def main():
                 assert time.monotonic()<deadline,state
                 time.sleep(.2)
             print('RUNNING: isolated pipeline',flush=True)
-            data=WS(server_url+'/appWS')
-            data.call('registerSocketRole',{'role':'DataCollector'})
+            data=WS(server_url+'/appWS').login(user)
+            data.call('registerSocketRole',{'role':'DataCollector','frontendId':frontendId})
+            ctrl.call('openFrontend',{})
             subscription=data.call('subscribeNodeChannel',{'nodeName':gaze['settings']['name'],'chanName':'GazeDirection'})
             assert subscription['props']['type']=='GAZE',subscription
             assert subscription['props']['schema']=='gaze-direction.v1',subscription
@@ -172,10 +182,10 @@ def main():
                 if not isinstance(raw,bytes):continue
                 assert len(raw)>32
                 stream,ts,pack,seq=struct.unpack('<QQQQ',raw[:32])
-                sample=json.loads(raw[32:]);assert sample['source_ts_us']==ts
+                sample=json.loads(raw[32:])
                 if sample['status']=='error':raise AssertionError(sample)
                 if sample['status']=='ok':
-                    assert sample['yaw_rad'] is not None and sample['confidence'] is None
+                    assert sample['yaw_rad'] is not None and len(sample['iris'])==3
                     samples.append(sample)
                     print('WS gaze sample',len(samples),flush=True)
             assert len(samples)==3,'No face predictions received through Iride data WS'
@@ -190,9 +200,8 @@ def main():
                 except queue.Empty:continue
                 if not isinstance(raw,bytes) or len(raw)<=32:continue
                 point=json.loads(raw[32:])
-                if point.get('schema')=='screen-point-of-gaze.v1' and point['status']=='uncalibrated':
-                    assert point['gaze2d'] is None
-                    assert point['eyeleft']['pupildiameter'] is None and point['eyeright']['pupildiameter'] is None
+                if 'screen_xy_px' in point and point['status']=='uncalibrated':
+                    assert point['gaze2d'] is None and point['screen_xy_px'] is None
                     uncalibrated=True;break
             assert uncalibrated,'Screen node must not fabricate uncalibrated pixels'
             def nodeCommand(cmd,args=None):
