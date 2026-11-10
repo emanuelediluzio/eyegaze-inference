@@ -1,7 +1,7 @@
 {
   "N2uCore.dyn.eyegaze.GazeDirection": {
     "group": "/Inference Models/Eye Gaze",
-    "paletteLabel": "Visible Camera",
+    "paletteLabel": "Gaze Direction",
     "label": "Gaze Direction",
     "visibility": "beginner",
     "PROPS_SCHEMA": {
@@ -12,7 +12,7 @@
   },
   "N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze": {
     "group": "/Inference Models/Eye Gaze",
-    "paletteLabel": "Gaze Direction",
+    "paletteLabel": "Gaze on Screen",
     "label": "Screen Point of Gaze",
     "visibility": "beginner",
     "commands": {
