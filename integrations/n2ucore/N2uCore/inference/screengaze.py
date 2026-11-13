@@ -63,7 +63,12 @@ def validateCalibration(value):
 
 class ScreenCalibration(BaseObject):
     POWERS = [(0, 0), (1, 0), (0, 1), (2, 0), (1, 1), (0, 2), (3, 0), (2, 1), (1, 2), (0, 3)]
-    DEGREE_TERMS = {1: 3, 2: 6, 3: 10}  # polynomial degree -> number of terms (leading POWERS)
+    # polynomial degree -> terms (indices in POWERS), horizontal and vertical screen axis. The vertical line keeps
+    # yaw^2 and yaw^2 * pitch: a straight line puts the top corners toward the centre (GazeDINO squeezes the pitch
+    # looking up, more sideways), yaw^2 alone also pulled the bottom centre down. Three recordings, left out of the
+    # fit: top corners 150 -> 118 px, centre 76 -> 64 px, bottom centre 67 px as before, bottom corners 60 -> 80 px
+    AXIS_TERMS = ({1: [0, 1, 2], 2: list(range(6)), 3: list(range(10))},
+                  {1: [0, 1, 2, 3, 7], 2: [0, 1, 2, 3, 4, 5, 7], 3: list(range(10))})
     # how far the head may move from where it was during calibration, measured on a recording (error 65 px in place):
     # 17-26% closer/farther gave 240-330 px, 0.5 eye spans down 160 px, 0.9 eye spans sideways only 77 px
     DRIFT_SCALE = 0.08          # relative eye span change (closer / farther)
@@ -173,8 +178,8 @@ class ScreenCalibration(BaseObject):
 
     @classmethod
     def _features(cls, x, y, iris, terms):
-        """The first ``terms`` of POWERS of normalized yaw x and pitch y, then the weighted normalized iris."""
-        return np.column_stack([x**xp * y**yp for xp, yp in cls.POWERS[:terms]] + [iris])
+        """The ``terms`` (indices in POWERS) of normalized yaw x and pitch y, then the weighted normalized iris."""
+        return np.column_stack([x**cls.POWERS[i][0] * y**cls.POWERS[i][1] for i in terms] + [iris])
 
     @classmethod
     def _solve(cls, matrix, values, terms):
@@ -186,21 +191,22 @@ class ScreenCalibration(BaseObject):
         penalty[terms:, terms:] = cls.RIDGE * np.eye(matrix.shape[1] - terms)
         return np.linalg.solve(matrix.T @ matrix + penalty, matrix.T @ values)
 
-    def _crossValidate(self, x, y, iris, screen, terms):
-        """Leave-one-out pixel errors of a fit with ``terms`` angle terms, or None if a fold is degenerate."""
+    def _crossValidate(self, x, y, iris, values, terms):
+        """Leave-one-out pixel errors along one screen axis of a fit with ``terms`` angle terms, or None if a fold is
+        degenerate."""
         errors = []
-        for i in range(len(screen)):
-            keep = np.arange(len(screen)) != i
-            coeff = self._solve(self._features(x[keep], y[keep], iris[keep], terms), screen[keep], terms)
+        for i in range(len(values)):
+            keep = np.arange(len(values)) != i
+            coeff = self._solve(self._features(x[keep], y[keep], iris[keep], terms), values[keep], len(terms))
             if coeff is None:
                 return None
             predicted = self._features(x[i:i + 1], y[i:i + 1], iris[i:i + 1], terms) @ coeff
-            errors.append(float(np.linalg.norm(predicted[0] - screen[i])))
+            errors.append(abs(predicted[0] - values[i]))
         return np.asarray(errors)
 
     def fit(self):
-        # the polynomial degree (1-3) with the lowest leave-one-out error wins: with 16 targets a cubic can
-        # follow the noise of single targets
+        # for each screen axis the polynomial degree (1-3) with the lowest leave-one-out error wins: with 16
+        # targets a cubic can follow the noise of single targets
         try:
             if self._size is None or self._active is not None or len(self._targets) != 16:
                 self.err("Finish all 16 valid targets before fitting")
@@ -216,19 +222,30 @@ class ScreenCalibration(BaseObject):
             irisScale = np.std(a[:, 2:5], axis=0)
             irisScale[irisScale < 1e-6] = np.inf     # a steady iris feature carries nothing: its term is 0
             iris = (a[:, 2:5] - irisCenter) / irisScale * self.IRIS_WEIGHT
-            best = None
-            for degree, terms in self.DEGREE_TERMS.items():
-                errors = self._crossValidate(x, y, iris, screen, terms)
-                if errors is not None and (best is None or errors.mean() < best[2].mean()):
-                    best = (degree, terms, errors)
-            if best is None:
-                self.err("Degenerate calibration; repeat with distinct targets")
-                return None
-            degree, terms, errors = best
-            matrix = self._features(x, y, iris, terms)
-            solved = self._solve(matrix, screen, terms)
+            best = []
+            for axis, degreeTerms in enumerate(self.AXIS_TERMS):
+                choice = None
+                for degree, terms in degreeTerms.items():
+                    errors = self._crossValidate(x, y, iris, screen[:, axis], terms)
+                    if errors is not None and (choice is None or errors.mean() < choice[1].mean()):
+                        choice = (degree, errors)
+                if choice is None:
+                    self.err("Degenerate calibration; repeat with distinct targets")
+                    return None
+                best.append(choice)
+            degrees = [best[0][0], best[1][0]]
+            errors = np.hypot(best[0][1], best[1][1])
             coeff = np.zeros((10, 2))
-            coeff[:terms] = solved[:terms]
+            rawIris = np.zeros((3, 2))
+            fitted = np.zeros_like(screen)
+            for axis, degree in enumerate(degrees):
+                terms = self.AXIS_TERMS[axis][degree]
+                matrix = self._features(x, y, iris, terms)
+                solved = self._solve(matrix, screen[:, axis], len(terms))
+                coeff[terms, axis] = solved[:len(terms)]
+                # iris terms back to raw iris values
+                rawIris[:, axis] = solved[len(terms):] * self.IRIS_WEIGHT / irisScale
+                fitted[:, axis] = matrix @ solved
             # Convert normalized coefficients back to raw-angle coordinates.
             px = Polynomial([-center[0] / scale[0], 1 / scale[0]])
             py = Polynomial([-center[1] / scale[1], 1 / scale[1]])
@@ -237,10 +254,9 @@ class ScreenCalibration(BaseObject):
                 for j, vx in enumerate((px**xp).coef):
                     for k, vy in enumerate((py**yp).coef):
                         raw[self.POWERS.index((j, k))] += coeff[i] * vx * vy
-            # iris terms back to raw iris values, their centering into the constant term
-            rawIris = solved[terms:] * self.IRIS_WEIGHT / irisScale[:, None]
+            # the iris centering into the constant term
             raw[0] -= irisCenter @ rawIris
-            stored = 6 if degree <= 2 else 10   # screenPoint reads 6 (quadratic) or 10 (cubic) terms
+            stored = 6 if not raw[6:].any() else 10   # screenPoint reads 6 (quadratic) or 10 (cubic) terms
             candidate = validateCalibration(
                 {
                     "cx": raw[:stored, 0].tolist(),
@@ -253,13 +269,14 @@ class ScreenCalibration(BaseObject):
             )
             if candidate is None:
                 return None
-            residual = float(np.linalg.norm(matrix @ solved - screen, axis=1).mean())
+            residual = float(np.linalg.norm(fitted - screen, axis=1).mean())
             self._calibration = candidate
             self._reference = np.median(np.asarray(self._heads), axis=0).tolist()
             self._size = None
             return {
                 "targets": len(self._targets),
-                "degree": degree,
+                "degree": max(degrees),
+                "degrees": degrees,     # [horizontal, vertical]
                 "fit_residual_px": residual,
                 "cv_error_px": float(errors.mean()),
                 "cv_p90_px": float(np.percentile(errors, 90)),

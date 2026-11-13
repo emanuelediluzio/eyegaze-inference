@@ -362,6 +362,12 @@
   color: var(--card-muted);
 }
 
+/* Nella riga in alto i secondi vanno sotto il mirino: sopra finirebbero sotto la barra del browser */
+.gaze-target.top-row .gaze-target-count {
+  bottom: auto;
+  top: 100%;
+}
+
 .gaze-calibration p {
   position: absolute;
   bottom: 24px;
@@ -370,10 +376,12 @@
   font-size: .9375rem;
 }
 
+/* In alto al centro, fra le colonne dei punti: negli angoli ci sono i punti del bordo */
 .gaze-calibration button {
   position: absolute;
   top: 16px;
-  right: 16px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 /* Scheda stretta: i valori sotto il video, in due colonne compatte */

@@ -55,7 +55,7 @@ class TestFit(unittest.TestCase):
     def test_noisy_linear_mapping_keeps_a_low_degree(self):
         cal, report = calibrate(linear, noise=math.radians(1))
         self.assertLess(report["degree"], 3)
-        self.assertEqual(len(cal.calibration()["cx"]), 6)
+        self.assertEqual(cal.calibration()["cx"][3:], [0.0] * 7)     # the horizontal stays a line
 
     def test_noiseless_cubic_mapping_keeps_the_cubic(self):
         cal, report = calibrate(cubic)

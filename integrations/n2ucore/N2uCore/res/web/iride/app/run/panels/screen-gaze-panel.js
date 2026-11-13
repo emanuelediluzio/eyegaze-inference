@@ -460,6 +460,7 @@ export class ScreenGazePanel {
   static #showTarget(dot, target) {
     dot.style.left = `${target[0]}px`;
     dot.style.top = `${target[1]}px`;
+    dot.classList.toggle("top-row", target[1] < window.innerHeight / 4);   // sopra non c'è spazio per i secondi
     return new Promise(resolve => requestAnimationFrame(resolve));
   }
 
@@ -514,7 +515,7 @@ export class ScreenGazePanel {
       const result = await this.#command("fitCalibration");
       this.#session.setCalibration(await this.#command("getCalibration"), context);
       this.#session.setEnabled(true);
-      PanelDom.setText(this.#message, "gaze.calibrationComplete", { error: result.cv_error_px.toFixed(0), degree: result.degree });
+      PanelDom.setText(this.#message, "gaze.calibrationComplete", { error: result.cv_error_px.toFixed(0) });
       started = false;
     } finally {
       document.removeEventListener("keydown", escape);
