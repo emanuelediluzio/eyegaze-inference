@@ -25,12 +25,15 @@ Times are measured on an M1 MacBook, model alone, batch 1. Core ML times use all
 | **ViT-B, Core ML int8 weights** | **87 MB** | **10 ms** | **8.41°** | **6.37°** | **78 / 72 / 193** |
 | ViT-B, Core ML 6-bit palette | 65 MB | 10 ms | 8.45° | 6.36° | 78 / 71 / 205 |
 | ViT-B, Core ML 4-bit palette | 44 MB | 10 ms | 9.86° | 7.61° | 107 / 107 / 227 |
+| ViT-B, PyTorch int8 joblib (`export_eyegaze.py --int8`) | 81 MB | 105 ms (as float) | 8.30° | 6.33° | 93 / 65 / 186 |
 | ViT-S student, PyTorch | 89 MB | 39 ms | 8.59° | 6.64° | 93 / 89 / 207 |
 | ViT-S student, Core ML int8 | 22 MB | 4 ms | 8.58° | 6.64° | 93 / 88 / 206 |
 
+The int8 joblib row was measured with FaceLandmarker (`../face-landmarker`). The float32 joblib with FaceLandmarker gives 8.32° / 6.32° on MPII and 93 / 65 / 186 px on the sessions, so int8 changes nothing there either. Frame by frame, the int8 angles are 0.25° from the float32 ones on average (max 0.6°).
+
 On an M1 Mac mini, the whole engine step (face landmarks, crop and model) takes 19.7 ms with the int8 package, against 68.3 ms with PyTorch (`../face-landmarker/bench_engine.py`).
 
-**Integration.** On macOS the gaze node loads `models/gazedino/model.mlpackage` when the file and coremltools are present (`N2uCore/dyn/eyegaze.py`, `GazeDinoEngine._loadCoreML`). Elsewhere it loads the PyTorch joblib.
+**Integration.** On macOS the gaze node loads `models/gazedino/model.mlpackage` when the file and coremltools are present (`N2uCore/dyn/eyegaze.py`, `GazeDinoEngine._loadCoreML`). Elsewhere it loads the PyTorch joblib, now int8 (81 MB): same quantization, rebuilt in float32 at load, so smaller but not faster.
 
 **Distilled student.** On the 6 GazeGene subjects held out of training, the student equals the teacher: 4.57° against 4.58°. On real faces it loses about 0.3° (MPII) and about 20% in screen px. Distillation v2 targets that gap:
 

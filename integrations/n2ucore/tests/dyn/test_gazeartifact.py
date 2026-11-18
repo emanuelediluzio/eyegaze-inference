@@ -46,3 +46,34 @@ def test_incompatible_or_nonfinite_artifacts_are_rejected(tmp_path):
     assert validateArtifact(invalid) is None
     invalid=copy.deepcopy(original);invalid['optimizer']={}
     assert validateArtifact(invalid) is None
+
+
+def test_int8_export_quantizes_weight_matrices_and_restores_float32_within_half_a_step(tmp_path):
+    source = tmp_path/'training.pt'
+    weight = torch.randn(4, 3)
+    torch.save({'model': {'head.weight': weight, 'head.bias': torch.tensor([.2, -.1, 0., 1.])}, 'val_err_deg': 3.24},
+               source)
+    output = tmp_path/'model.joblib'
+    report = exportInference(source, output, int8=True)
+    assert report['format'] == 'n2u.gazedino.inference.v1-int8' and report['int8_tensors'] == 1
+    state = joblib.load(output)['state_dict']
+    assert state['head.weight'].dtype == np.int8 and state['head.weight@scale'].shape == (4,)
+    assert state['head.bias'].dtype == np.float32                  # vectors stay float32
+    restored = loadModelState(output)
+    assert set(restored) == {'head.weight', 'head.bias'} and restored['head.weight'].dtype == torch.float32
+    step = weight.abs().max(dim=1).values / 127
+    assert ((restored['head.weight'] - weight).abs() <= step[:, None] / 2 + 1e-7).all()
+    assert torch.equal(restored['head.bias'], torch.tensor([.2, -.1, 0., 1.]))
+
+
+def test_int8_artifacts_without_scales_or_int8_in_float_artifacts_are_rejected(tmp_path):
+    source = tmp_path/'training.pt'
+    torch.save({'model': {'head.weight': torch.randn(4, 3), 'head.bias': torch.zeros(4)}, 'val_err_deg': 3.24}, source)
+    output = tmp_path/'model.joblib'; exportInference(source, output, int8=True)
+    original = joblib.load(output)
+    invalid = copy.deepcopy(original); del invalid['state_dict']['head.weight@scale']
+    assert validateArtifact(invalid) is None
+    invalid = copy.deepcopy(original); invalid['state_dict']['head.weight@scale'][0] = 0
+    assert validateArtifact(invalid) is None
+    invalid = copy.deepcopy(original); invalid['format'] = 'n2u.gazedino.inference.v1'
+    assert validateArtifact(invalid) is None

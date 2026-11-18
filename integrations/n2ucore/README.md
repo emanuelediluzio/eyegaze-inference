@@ -50,6 +50,8 @@ N2uCore/res/models/gazedino/model.joblib
 
 The model path is fixed at `models/gazedino/model.joblib`, resolved through the framework resource manager. There is no model selector, model-path parameter or per-node tuning panel. Old saved settings do not override these fixed values.
 
+**Smaller joblib (int8, 81 MB).** `python tools/export_eyegaze.py --source best_run3_3.24deg.pt --output model.joblib --int8` stores every weight matrix as int8 with one scale per row (format `n2u.gazedino.inference.v1-int8`); the node rebuilds float32 weights when it loads it, so the speed is unchanged. On the recordings it gives the same screen error as the float32 joblib (frame-by-frame difference 0.25 deg on average). The float32 joblib keeps working.
+
 **macOS: Core ML model (optional, recommended on Macs).** Next to the joblib, place the int8 Core ML export at `N2uCore/res/models/gazedino/model.mlpackage` (87 MB) and install `coremltools` in the same environment. On macOS the node then uses it instead of the joblib: same accuracy (MPIIFaceGaze 6.37 vs 6.35 deg, same screen error on recordings), engine step ~20 ms instead of ~70 ms on an M1 Mac mini. Without the package or coremltools it falls back to the joblib. Build the package with `experiments/model-size/export_coreml.py` (variant `_w8`); measurements are in `experiments/model-size/README.md`.
 
 Face landmarks come from MediaPipe FaceLandmarker with `models/face_landmarker.task`, the model file the tracking nodes already use (it works with mediapipe 0.10.21 and 1.2.3; the legacy FaceMesh is gone in 1.2.3). One face per frame, as in the tracking nodes.

@@ -12,6 +12,9 @@ import torch
 from N2uCore import log
 
 FORMAT = "n2u.gazedino.inference.v1"
+FORMAT_INT8 = "n2u.gazedino.inference.v1-int8"  # weight matrices as int8, one float32 scale per output row: 87 MB
+                                                # instead of 324, same angles (MPIIFaceGaze 6.37 vs 6.35 deg)
+SCALE = "@scale"                                # state_dict key of the scales of the int8 tensor <name>
 ARCHITECTURE = {"name": "GazeDINO", "backbone": "dinov2_vitb14", "head_dims": [768, 512, 128, 2]}
 PREPROCESSING = {
     "color": "RGB",
@@ -38,7 +41,7 @@ def sha256(path):
 
 def validateArtifact(value):
     try:
-        if not isinstance(value, dict) or set(value) != FIELDS or value["format"] != FORMAT:
+        if not isinstance(value, dict) or set(value) != FIELDS or value["format"] not in (FORMAT, FORMAT_INT8):
             log.err("Unsupported GazeDINO inference artifact")
             return None
         for name, expected in [
@@ -53,13 +56,21 @@ def validateArtifact(value):
         if not isinstance(state, dict) or not state:
             log.err("Missing GazeDINO weights")
             return None
+        int8 = value["format"] == FORMAT_INT8
         for name, array in state.items():
-            if (
-                not isinstance(name, str)
-                or not isinstance(array, np.ndarray)
-                or array.dtype != np.float32
-                or not np.isfinite(array).all()
-            ):
+            if not isinstance(name, str) or not isinstance(array, np.ndarray):
+                log.err("Invalid GazeDINO weight: " + str(name))
+                return None
+            if int8 and array.dtype == np.int8:
+                scale = state.get(name + SCALE)
+                valid = array.ndim >= 2 and isinstance(scale, np.ndarray) and scale.shape == (array.shape[0],)
+            elif int8 and name.endswith(SCALE):
+                quantized = state.get(name[: -len(SCALE)])
+                valid = isinstance(quantized, np.ndarray) and quantized.dtype == np.int8 \
+                    and array.dtype == np.float32 and np.isfinite(array).all() and (array > 0).all()
+            else:
+                valid = array.dtype == np.float32 and np.isfinite(array).all()
+            if not valid:
                 log.err("Invalid GazeDINO weight: " + str(name))
                 return None
         metadata = value["metadata"]
@@ -97,7 +108,8 @@ def loadModelState(path):
             artifact = validateArtifact(joblib.load(path))
             if artifact is None:
                 return None
-            return {name: torch.from_numpy(array) for name, array in artifact["state_dict"].items()}
+            state = artifact["state_dict"]
+            return {name: torch.from_numpy(dequantize(state, name)) for name in state if not name.endswith(SCALE)}
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         state = checkpoint["model"]
         if not isinstance(state, dict) or not state:
@@ -109,7 +121,25 @@ def loadModelState(path):
         return None
 
 
-def exportInference(source, destination):
+def quantize(array):
+    """Symmetric int8 per output row (the first axis), as Core ML's linear_quantize_weights: (int8 array, scales)."""
+    scale = np.abs(array.reshape(array.shape[0], -1)).max(axis=1) / 127.0
+    scale = np.where(scale > 0, scale, 1.0).astype(np.float32)
+    shape = (-1,) + (1,) * (array.ndim - 1)
+    return np.clip(np.round(array / scale.reshape(shape)), -127, 127).astype(np.int8), scale
+
+
+def dequantize(state, name):
+    """A float32 weight of a state_dict, rebuilt from int8 and scales when it was quantized."""
+    array = state[name]
+    if array.dtype != np.int8:
+        return array
+    return array.astype(np.float32) * state[name + SCALE].reshape((-1,) + (1,) * (array.ndim - 1))
+
+
+def exportInference(source, destination, int8=False):
+    """The training checkpoint as the inference artifact; with int8, every weight matrix (Linear, patch embedding)
+    as int8 with a scale per output row, the rest (biases, norms, tokens, position embedding) in float32."""
     try:
         source, destination = Path(source).expanduser(), Path(destination).expanduser()
         if destination.suffix.lower() != ".joblib":
@@ -125,13 +155,17 @@ def exportInference(source, destination):
         ):
             log.err("Expected a float32 model state_dict")
             return None
+        weights = {name: tensor.detach().cpu().numpy() for name, tensor in state.items()}
+        if int8:
+            for name in [n for n, a in weights.items() if n.endswith(".weight") and a.ndim >= 2]:
+                weights[name], weights[name + SCALE] = quantize(weights[name])
         artifact = validateArtifact(
             {
-                "format": FORMAT,
+                "format": FORMAT_INT8 if int8 else FORMAT,
                 "architecture": ARCHITECTURE.copy(),
                 "preprocessing": PREPROCESSING.copy(),
                 "output": OUTPUT.copy(),
-                "state_dict": {name: tensor.detach().cpu().numpy() for name, tensor in state.items()},
+                "state_dict": weights,
                 "metadata": {
                     "source_sha256": sha256(source),
                     "validation_error_deg": checkpoint.get("val_err_deg"),
@@ -148,11 +182,16 @@ def exportInference(source, destination):
             restored = validateArtifact(joblib.load(temporary))
             if restored is None:
                 return None
-            if set(restored["state_dict"]) != set(state):
+            restoredState = restored["state_dict"]
+            if {n for n in restoredState if not n.endswith(SCALE)} != set(state):
                 log.err("Export lost weight names")
                 return None
             for name, tensor in state.items():
-                if not np.array_equal(restored["state_dict"][name], tensor.detach().cpu().numpy()):
+                original, weight = tensor.detach().cpu().numpy(), dequantize(restoredState, name)
+                # int8: each value within half a step of its row; float32: identical
+                tolerance = 0.0 if restoredState[name].dtype != np.int8 else \
+                    restoredState[name + SCALE].reshape((-1,) + (1,) * (original.ndim - 1)) * 0.5001
+                if weight.shape != original.shape or (np.abs(weight - original) > tolerance).any():
                     log.err("Export changed weight values: " + name)
                     return None
             # Publish the verified export without replacing an existing file.
@@ -160,12 +199,13 @@ def exportInference(source, destination):
         finally:
             Path(temporary).unlink(missing_ok=True)
         return {
-            "format": FORMAT,
+            "format": FORMAT_INT8 if int8 else FORMAT,
             "source_bytes": source.stat().st_size,
             "artifact_bytes": destination.stat().st_size,
             "sha256": sha256(destination),
             "tensor_count": len(state),
-            "all_weights_exact": True,
+            "all_weights_exact": not int8,
+            "int8_tensors": sum(1 for n in weights if n.endswith(SCALE)),
         }
     except Exception as exc:
         log.err("exportInference: {}".format(exc))

@@ -1,0 +1,9 @@
+== mean over the sessions
+   model             cv         still          back          left        closer          down   (target / frame px)
+   landmarker.npz    93     65/72        112/119       134/145       104/108       186/190   
+   int8.npz          93     65/72        113/119       137/147       105/109       186/190   
+   final.npz         94     64/72        114/120       140/150       106/110       188/192   
+4489 frames, 15 people   raw 8.30 deg   calibrated 6.33 deg
+per person, calibrated: 4.2 3.9 6.1 6.5 4.5 5.3 6.3 7.8 9.8 6.0 6.0 6.9 8.5 7.7 5.5
+
+[exited with code 0]
