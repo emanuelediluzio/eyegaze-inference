@@ -90,7 +90,8 @@ def teach(teacher: nn.Module, imgs: torch.Tensor):
 
 
 def crops(folder: str) -> list[str]:
-    return sorted(str(p) for p in Path(folder).glob("*.jpg"))
+    # not the hidden "._" files macOS adds when copying to another disk: they are no images
+    return sorted(str(p) for p in Path(folder).glob("*.jpg") if not p.name.startswith("."))
 
 
 def main():
