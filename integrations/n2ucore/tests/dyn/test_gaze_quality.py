@@ -8,6 +8,8 @@
   c2. ``GazeDinoEngine.analyze``: the smoothing weight follows the time between estimates;
   c3. ``GazeDinoEngine.analyze``: with the eyes closed (blink) the last estimate is kept;
   c4. ``GazeDinoEngine._predictCrop``: the crop reaches the model in its precision (fp16 on a GPU), angles in float;
+  c5. ``GazeDinoEngine._loadCoreML``: a Core ML package runs on all compute units (CPU only with the CPU device),
+      takes the crop as fp32 and gives float angles;
   d. ``ScreenPointOfGaze._process``: the upstream quality travels with the point.
 
 Built without model, camera or event loop (``__new__`` + attributes, SimpleNamespace
@@ -18,11 +20,13 @@ Run from project root:
 """
 
 import math
+import sys
 import time
 import unittest
 from collections import deque
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import torch
@@ -32,8 +36,8 @@ from N2uCore.inference.gazedinoengine import GazeDinoEngine
 
 
 def face(x1, y1, x2, y2):
-    """Landmarks of a face filling the normalized box (two corner points are enough)."""
-    return SimpleNamespace(landmark=[SimpleNamespace(x=x1, y=y1), SimpleNamespace(x=x2, y=y2)])
+    """Landmarks of a face filling the normalized box (two corner points are enough), as FaceLandmarker gives them."""
+    return [SimpleNamespace(x=x1, y=y1), SimpleNamespace(x=x2, y=y2)]
 
 
 def engine():
@@ -47,7 +51,7 @@ class TestNearestFace(unittest.TestCase):
     def test_biggest_face_is_chosen(self):
         far, near = face(0.05, 0.1, 0.15, 0.3), face(0.5, 0.2, 0.8, 0.7)
         points, box, edge = engine()._nearestFace([far, near], 640, 480)
-        self.assertIs(points, near.landmark)
+        self.assertIs(points, near)
         self.assertEqual(box, [320, 96, 512, 336])
         self.assertFalse(edge)
 
@@ -56,14 +60,14 @@ class TestNearestFace(unittest.TestCase):
         followed, other = face(0.1, 0.2, 0.4, 0.6), face(0.55, 0.2, 0.87, 0.62)   # other ~7% bigger
         e._bbox = [64, 96, 256, 288]
         points, _, _ = e._nearestFace([other, followed], 640, 480)
-        self.assertIs(points, followed.landmark)
+        self.assertIs(points, followed)
 
     def test_clearly_bigger_face_takes_over(self):
         e = engine()
         followed, near = face(0.1, 0.2, 0.3, 0.45), face(0.5, 0.1, 0.9, 0.8)
         e._bbox = [64, 96, 192, 216]
         points, _, _ = e._nearestFace([followed, near], 640, 480)
-        self.assertIs(points, near.landmark)
+        self.assertIs(points, near)
 
     def test_face_cut_by_the_border_is_flagged(self):
         _, box, edge = engine()._nearestFace([face(-0.1, 0.2, 0.3, 0.7)], 640, 480)
@@ -181,11 +185,36 @@ class TestEyeGeometry(unittest.TestCase):
         self.assertAlmostEqual(ry, -0.075)
 
 
+class TestCoreML(unittest.TestCase):
+    def load(self, deviceName):
+        ct = SimpleNamespace(ComputeUnit=SimpleNamespace(ALL="all", CPU_ONLY="cpu_only"),
+                             models=SimpleNamespace(MLModel=MagicMock()))
+        ct.models.MLModel.return_value.predict.return_value = {"gaze": np.array([[0.1, -0.2]], np.float16)}
+        e = GazeDinoEngine(Path("model.mlpackage"), deviceName=deviceName)
+        e._checkpoint = Path("model.mlpackage")
+        with patch.dict(sys.modules, {"coremltools": ct}):
+            self.assertTrue(e._loadCoreML())
+        return e, ct.models.MLModel
+
+    def test_package_runs_on_all_units_and_gives_float_angles(self):
+        e, MLModel = self.load("auto")
+        MLModel.assert_called_once_with("model.mlpackage", compute_units="all")
+        self.assertEqual((e._device.type, e._dtype), ("cpu", torch.float32))
+        out = e._model(torch.zeros(1, 3, 224, 224))
+        self.assertEqual(out.dtype, torch.float32)
+        np.testing.assert_allclose(out.numpy(), [[0.1, -0.2]], atol=1e-3)
+        crop = MLModel.return_value.predict.call_args[0][0]["image"]
+        self.assertEqual((crop.shape, crop.dtype), ((1, 3, 224, 224), np.float32))
+
+    def test_cpu_device_keeps_core_ml_on_the_cpu(self):
+        _, MLModel = self.load("cpu")
+        MLModel.assert_called_once_with("model.mlpackage", compute_units="cpu_only")
+
+
 class TestSmoothing(unittest.TestCase):
     def analyze(self, e, yaw, ts, lid=0.01):
         e._predictCrop = MagicMock(return_value=np.array([yaw, 0.0]))
-        e._mesh.process.return_value = SimpleNamespace(multi_face_landmarks=[SimpleNamespace(
-            landmark=TestEyeGeometry.landmarks(None, lid=lid))])
+        e._mesh.detect.return_value = SimpleNamespace(face_landmarks=[TestEyeGeometry.landmarks(None, lid=lid)])
         return e.analyze(np.zeros((480, 640, 3), np.uint8), ts)["yaw_rad"]
 
     def engine(self):

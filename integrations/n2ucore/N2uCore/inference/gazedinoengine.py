@@ -7,14 +7,26 @@ from pathlib import Path
 
 import mediapipe as mp
 import numpy as np
+from mediapipe.tasks.python import vision
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 
 from N2uCore import log
+from N2uCore.resman import ResourceManager
 
 from N2uCore.inference.gazeartifact import loadModelState
 from N2uCore.dyn.wrk.memprovider import releaseComputeCache, resolveComputeResources
+
+
+class CoreMLGaze(object):
+    """GazeDINO as a Core ML model, called like the PyTorch one: normalized crop tensor in, (1, 2) angles out."""
+
+    def __init__(self, model):
+        self._model = model
+
+    def __call__(self, crop):
+        return torch.from_numpy(self._model.predict({"image": crop.numpy()})["gaze"].astype(np.float32))
 
 
 class GazeDinoEngine(object):
@@ -22,8 +34,8 @@ class GazeDinoEngine(object):
     HALF_DEVICES = ("cuda", "xpu", "mps")  # half precision on a GPU: same angles (0.008 deg apart on a recording),
                                            # 27% faster on an M1; the CPU stays in fp32 (no gain there)
 
-    MAX_FACES = 2               # faces tracked per frame; only the nearest one is analysed (with 4 tracked
-                                # faces MediaPipe stops detecting, so a nearer newcomer would be missed)
+    LANDMARKER = "models/face_landmarker.task"  # the MediaPipe FaceLandmarker of the tracking nodes, set up as there
+    MAX_FACES = 1               # one person per frame, as in the tracking nodes (more faces are not handled yet)
     SWITCH_RATIO = 1.25         # another face must be this much bigger to replace the one being followed
     FACE_RATIO_GOOD = (0.18, 0.55)  # longer face box side / image width at full quality (sitting distance)
     FACE_RATIO_LIMIT = (0.08, 0.85) # quality reaches 0 at these ratios (too far / too close)
@@ -56,32 +68,11 @@ class GazeDinoEngine(object):
                 log.err("alpha must be in (0, 1]")
                 return False
             self._checkpoint = Path(self._checkpoint).expanduser()
-            if not self._checkpoint.is_file():
+            if not self._checkpoint.exists():
                 log.err("GazeDINO checkpoint not found: {}".format(self._checkpoint))
                 return False
-            deviceName = self._deviceName
-            if deviceName == "auto":
-                resources = resolveComputeResources(supportedDevices=self.SUPPORTED_DEVICES)
-                if resources is None:
-                    return False
-                deviceName, _ = resources
-            self._device = torch.device(deviceName)
-            hubSource = (
-                Path(self._hubDir)
-                if self._hubDir
-                else (Path(torch.hub.get_dir()) / "facebookresearch_dinov2_main")
-            )
-            if not (hubSource / "hubconf.py").is_file():
-                log.err("Install DINOv2 in the local Torch Hub cache before starting GazeDINO")
+            if not (self._loadCoreML() if self._checkpoint.suffix == ".mlpackage" else self._loadTorch()):
                 return False
-            model = self._buildModel(hubSource)
-            modelState = loadModelState(self._checkpoint)
-            if modelState is None:
-                return False
-            model.load_state_dict(modelState, strict=True)
-            del modelState
-            self._dtype = torch.float16 if self._device.type in self.HALF_DEVICES else torch.float32
-            self._model = model.eval().to(self._device, self._dtype)
             self._transform = transforms.Compose(
                 [
                     transforms.ToPILImage(),
@@ -90,11 +81,19 @@ class GazeDinoEngine(object):
                     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
                 ]
             )
-            self._mesh = mp.solutions.face_mesh.FaceMesh(
-                max_num_faces=self.MAX_FACES,
-                refine_landmarks=True,
-                min_detection_confidence=0.5,
-                min_tracking_confidence=0.5,
+            landmarker = ResourceManager().absolutePath(self.LANDMARKER)
+            if not landmarker or not Path(landmarker).is_file():
+                log.err("Face landmarker not found: {}".format(self.LANDMARKER))
+                return False
+            self._mesh = vision.FaceLandmarker.create_from_options(
+                vision.FaceLandmarkerOptions(
+                    base_options=mp.tasks.BaseOptions(model_asset_path=landmarker),
+                    output_face_blendshapes=False,
+                    output_facial_transformation_matrixes=False,
+                    min_face_detection_confidence=0.5,
+                    min_tracking_confidence=0.5,
+                    num_faces=self.MAX_FACES,
+                )
             )
 
             return True
@@ -102,6 +101,47 @@ class GazeDinoEngine(object):
             log.err("load: {}".format(exc))
             self.close()
             return False
+
+    def _loadTorch(self):
+        # PyTorch weights (gazeartifact): half precision on a GPU, fp32 on the CPU
+        deviceName = self._deviceName
+        if deviceName == "auto":
+            resources = resolveComputeResources(supportedDevices=self.SUPPORTED_DEVICES)
+            if resources is None:
+                return False
+            deviceName, _ = resources
+        self._device = torch.device(deviceName)
+        hubSource = (
+            Path(self._hubDir)
+            if self._hubDir
+            else (Path(torch.hub.get_dir()) / "facebookresearch_dinov2_main")
+        )
+        if not (hubSource / "hubconf.py").is_file():
+            log.err("Install DINOv2 in the local Torch Hub cache before starting GazeDINO")
+            return False
+        model = self._buildModel(hubSource)
+        modelState = loadModelState(self._checkpoint)
+        if modelState is None:
+            return False
+        model.load_state_dict(modelState, strict=True)
+        del modelState
+        self._dtype = torch.float16 if self._device.type in self.HALF_DEVICES else torch.float32
+        self._model = model.eval().to(self._device, self._dtype)
+        return True
+
+    def _loadCoreML(self):
+        # Core ML export on macOS (eyegaze-inference experiments/model-size/export_coreml.py, int8 weights):
+        # same angles as PyTorch on MPIIFaceGaze (6.37 vs 6.35 deg) and on the recordings, 87 MB instead of 324,
+        # ~10 ms a crop on an M1 Neural Engine instead of ~105 ms on MPS; Core ML picks its compute units itself
+        try:
+            import coremltools as ct
+        except ImportError:
+            log.err("coremltools is needed for the Core ML GazeDINO")
+            return False
+        units = ct.ComputeUnit.CPU_ONLY if self._deviceName == "cpu" else ct.ComputeUnit.ALL
+        self._device, self._dtype = torch.device("cpu"), torch.float32
+        self._model = CoreMLGaze(ct.models.MLModel(str(self._checkpoint), compute_units=units))
+        return True
 
     def _buildModel(self, hubSource):
         backbone = torch.hub.load(str(hubSource), "dinov2_vitb14", source="local", pretrained=False)
@@ -153,8 +193,7 @@ class GazeDinoEngine(object):
         # nearest = longest box side; the face already followed is kept unless another is SWITCH_RATIO times
         # bigger, so two people of similar size do not make the estimate jump between them
         candidates = []
-        for face in faces:
-            points = face.landmark
+        for points in faces:
             left = min(point.x for point in points) * width
             top = min(point.y for point in points) * height
             right = max(point.x for point in points) * width
@@ -233,12 +272,12 @@ class GazeDinoEngine(object):
             if rgb.dtype != np.uint8 or rgb.ndim != 3 or rgb.shape[2] != 3:
                 log.err("GazeDINO requires an RGB UINT8 image with depth 3")
                 return None
-            detected = self._mesh.process(np.ascontiguousarray(rgb))
-            if not detected.multi_face_landmarks:
+            detected = self._mesh.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb)))
+            if not detected.face_landmarks:
                 self.reset()
                 return {"status": "no_face"}
             height, width = rgb.shape[:2]
-            points, box, atEdge = self._nearestFace(detected.multi_face_landmarks, width, height)
+            points, box, atEdge = self._nearestFace(detected.face_landmarks, width, height)
             if points is None:
                 self.reset()
                 return {"status": "no_face"}

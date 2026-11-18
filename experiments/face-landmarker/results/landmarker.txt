@@ -1,0 +1,31 @@
+13:09  up 27 days, 34 mins, 6 users, load averages: 14.25 10.20 9.16
+== speed session2 facemesh
+N2uCore_dev                  max faces 2   step median   85.7 ms  p90  137.3 ms   face 100.0%   eye opening median 0.332  p5 0.283
+== speed session2 landmarker 2 faces
+N2uCore_dev-landmarker       max faces 2   step median   86.4 ms  p90  101.3 ms   face 100.0%   eye opening median 0.344  p5 0.311
+== speed session2 landmarker 1 face
+N2uCore_dev-landmarker       max faces 1   step median   83.7 ms  p90   99.8 ms   face 100.0%   eye opening median 0.344  p5 0.311
+== speed session3 facemesh
+N2uCore_dev                  max faces 2   step median   80.7 ms  p90   92.6 ms   face 100.0%   eye opening median 0.315  p5 0.268
+== speed session3 landmarker 2 faces
+N2uCore_dev-landmarker       max faces 2   step median   84.8 ms  p90  100.4 ms   face 100.0%   eye opening median 0.335  p5 0.301
+== speed session3 landmarker 1 face
+N2uCore_dev-landmarker       max faces 1   step median   84.9 ms  p90   97.5 ms   face 100.0%   eye opening median 0.335  p5 0.301
+== session session2 landmarker
+== session session3 landmarker
+== screen facemesh vs landmarker
+== session2
+   model             cv         still          back          left        closer          down   (target / frame px)
+   features.npz      57     92/98        137/146       152/154        92/94        156/156   
+   landmarker.npz    65     72/79        114/122       141/149       105/108       183/184   
+== session3
+   model             cv         still          back          left        closer          down   (target / frame px)
+   features.npz      97     51/57         90/97        148/152       102/110       232/235   
+   landmarker.npz   121     57/64        111/115       127/140       103/107       190/195   
+== mean over the sessions
+   model             cv         still          back          left        closer          down   (target / frame px)
+   features.npz      77     71/77        114/121       150/153        97/102       194/196   
+   landmarker.npz    93     65/72        112/119       134/145       104/108       186/190   
+== mpii landmarker
+4489 frames, 15 people   raw 8.32 deg   calibrated 6.32 deg
+per person, calibrated: 4.2 3.9 6.1 6.5 4.5 5.3 6.3 7.8 9.8 6.0 6.0 6.9 8.4 7.7 5.5

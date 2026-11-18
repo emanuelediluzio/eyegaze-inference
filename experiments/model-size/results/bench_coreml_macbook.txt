@@ -1,0 +1,34 @@
+scikit-learn version 1.9.1 is not supported. Minimum required version: 0.17. Maximum required version: 1.5.1. Disabling scikit-learn conversion API.
+package                MB  units         load s      ms  drift deg
+student_fp16         43.9  CPU_ONLY         0.5    14.9      0.000
+student_fp16         43.9  CPU_AND_GPU      0.6    15.7      0.532
+student_fp16         43.9  CPU_AND_NE      13.2     6.9      0.476
+student_fp16         43.9  ALL             17.9    12.9      0.476
+student_p4           11.4  CPU_ONLY         1.9    15.1     17.947
+student_p4           11.4  CPU_AND_GPU      0.5    18.0     24.301
+student_p4           11.4  CPU_AND_NE      19.2     5.5     17.576
+student_p4           11.4  ALL             14.0     6.8     17.576
+student_p6           16.7  CPU_ONLY         0.5    14.8      6.407
+student_p6           16.7  CPU_AND_GPU      0.5    20.5      6.560
+student_p6           16.7  CPU_AND_NE      16.2     5.5      6.407
+student_p6           16.7  ALL             14.6     5.4      6.407
+student_w8           22.2  CPU_ONLY         0.5    14.8      1.063
+student_w8           22.2  CPU_AND_GPU      0.6    32.4      1.021
+student_w8           22.2  CPU_AND_NE      14.6     4.8      0.965
+student_w8           22.2  ALL              8.2     4.2      0.965
+teacher_fp16        172.5  CPU_ONLY         0.7    30.7      0.000
+teacher_fp16        172.5  CPU_AND_GPU      0.9    28.5      0.102
+teacher_fp16        172.5  CPU_AND_NE      18.0    11.4      0.147
+teacher_fp16        172.5  ALL             17.6    11.0      0.147
+teacher_p4           43.9  CPU_ONLY         0.6    29.0      1.294
+teacher_p4           43.9  CPU_AND_GPU      0.4    31.8      7.596
+teacher_p4           43.9  CPU_AND_NE      18.2    10.2      1.301
+teacher_p4           43.9  ALL             16.5    10.3      1.301
+teacher_p6           65.0  CPU_ONLY         0.7    29.7      0.958
+teacher_p6           65.0  CPU_AND_GPU      0.4    30.2      0.688
+teacher_p6           65.0  CPU_AND_NE      16.9    10.0      0.686
+teacher_p6           65.0  ALL             16.8    10.0      0.686
+teacher_w8           86.6  CPU_ONLY         0.6    29.2      0.420
+teacher_w8           86.6  CPU_AND_GPU      0.6    51.7      0.140
+teacher_w8           86.6  CPU_AND_NE      17.8    10.1      0.175
+teacher_w8           86.6  ALL             17.5    10.2      0.175

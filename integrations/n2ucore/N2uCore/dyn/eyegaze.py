@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import math
+import sys
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -17,6 +20,7 @@ from N2uCore.signal                     import Signal, AttachMode
 from N2uCore.resman                     import ResourceManager
 from N2uCore.multimedia.imgdec          import ImageDecoder
 from N2uCore.inference.gazedinoengine   import GazeDinoEngine
+from N2uCore.loop                       import LoopTimerMode
 
 ###############################################################################
 ###############################################################################
@@ -24,6 +28,7 @@ from N2uCore.inference.gazedinoengine   import GazeDinoEngine
 class GazeDirectionTicker(MlTicker):
 
     MODEL_PATH = "models/gazedino/model.joblib"
+    COREML_PATH = "models/gazedino/model.mlpackage"   # macOS: the int8 Core ML export, used when present
     FOOTPRINT = 700 * 1024**2     # ViT-B/14 + head + face mesh
 
     RETRY_SECS = 30
@@ -44,7 +49,7 @@ class GazeDirectionTicker(MlTicker):
 
     def _loadModel(self) -> bool:
         self._engine = GazeDinoEngine(self._modelPath, deviceName=self._deviceName)
-        self._modelLabel = "GazeDINO ViT-B/14"
+        self._modelLabel = "GazeDINO ViT-B/14" + (" Core ML" if self._modelPath.endswith(".mlpackage") else "")
         return self._engine.load()
 
     def _unloadModel(self) -> None:
@@ -82,6 +87,7 @@ class GazeDirection(MlDevice):
         self._output = None           # GazeDirection (JSON), read by ScreenPointOfGaze
         self._points = None           # GazePoints (POINTS_2D), drawn on the card
 
+        self._device = None
         self._memProvider = None
         self._inFlight = False
 
@@ -89,6 +95,7 @@ class GazeDirection(MlDevice):
         if not super()._onSetup():
             return False
 
+        self.setRunningTimerMode(LoopTimerMode.TIMEDLOOP_RT)
         self.disableAutoAnnounce()
 
         resources = resolveComputeResources(
@@ -113,10 +120,19 @@ class GazeDirection(MlDevice):
     def _tickerArgs(self) -> dict:
         return {
             "memProvider": self._memProvider,
-            "modelPath": ResourceManager().absolutePath(GazeDirectionTicker.MODEL_PATH),
+            "modelPath": self._modelFile(),
             "deviceName": self._device,
             "idleTimeoutSecs": 600,
         }
+
+    @staticmethod
+    def _modelFile() -> str:
+        # on macOS the Core ML export (same angles, 87 MB, ~10x faster model) when it and coremltools are there
+        if sys.platform == "darwin" and importlib.util.find_spec("coremltools") is not None:
+            path = ResourceManager().absolutePath(GazeDirectionTicker.COREML_PATH)
+            if path and Path(path).exists():
+                return path
+        return ResourceManager().absolutePath(GazeDirectionTicker.MODEL_PATH)
 
     def _onInit(self) -> bool:
         source = "{}.{}".format(self._source["node"], self._source["channel"])
@@ -206,7 +222,7 @@ class GazeDirection(MlDevice):
         if self._inFlight:
             return
 
-        image = self._decoder.decode(bytes(pack.data))
+        image = self._decoder.decode(pack.data)
         self._inFlight = True
         self._ticker.loop().invokeSlot(self._ticker.infer, {"image": image, "ts": pack.ts, "packID": pack.packID})
 
