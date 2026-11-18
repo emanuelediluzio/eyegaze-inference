@@ -1,0 +1,2 @@
+teacher   87.0 M params   model mps  153.5 ms   model cpu fp32  244.6 ms   engine step  172.0 ms ( 5.8 FPS)
+student   22.3 M params   model mps   70.6 ms   model cpu fp32  127.7 ms   engine step   85.5 ms (11.7 FPS)

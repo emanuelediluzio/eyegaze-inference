@@ -1,0 +1,9 @@
+{
+  "teacher": "../teacher/best_run3_3.24deg.pt",
+  "teacher_backbone": "dinov2_vitb14",
+  "student": "dinov2_vits14",
+  "alpha": 0.5,
+  "beta": 1.0,
+  "teacher_val_err_deg": 2.2317,
+  "best_val_err_deg": 3.2863
+}

@@ -1,0 +1,12 @@
+== session2
+   model             cv         still          back          left        closer          down   (target / frame px)
+   features.npz      57     92/98        137/146       152/154        92/94        156/156   
+   student.npz       70     81/90        127/137       156/158       107/110       169/168   
+== session3
+   model             cv         still          back          left        closer          down   (target / frame px)
+   features.npz      97     51/57         90/97        148/152       102/110       232/235   
+   student.npz      116     98/104        95/102       143/157       143/155       246/253   
+== mean over the sessions
+   model             cv         still          back          left        closer          down   (target / frame px)
+   features.npz      77     71/77        114/121       150/153        97/102       194/196   
+   student.npz       93     89/97        111/120       149/158       125/133       207/210   

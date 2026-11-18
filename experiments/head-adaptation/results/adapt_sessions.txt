@@ -1,0 +1,20 @@
+== session2 1440x900: calibration cv 57 px, degrees [1, 1]
+   method                    still          back          left        closer          down   (target / frame px)
+   poly                  94/98        137/146       151/153        93/94        156/156   
+   poly+h128             94/98        137/146       151/153        93/94        156/156   
+   poly+cls              95/99        137/146       150/153        93/94        156/156   
+   poly+h128 frames      93/97        135/143       150/153        92/94        157/157   
+   h128 direct          101/104       151/161       154/156       100/101       198/197   
+== session3 1920x1080: calibration cv 97 px, degrees [1, 1]
+   method                    still          back          left        closer          down   (target / frame px)
+   poly                  51/57         90/97        149/152       102/110       231/235   
+   poly+h128             50/57         90/96        149/152       102/110       232/235   
+   poly+cls              50/57         89/95        146/149       102/110       232/235   
+   poly+h128 frames      75/80         76/84        168/170       137/139       261/263   
+   h128 direct          118/123       118/125       181/184       143/149       328/327   
+== mean over the sessions
+   poly                  72/77        114/121       150/153        97/102       194/196   
+   poly+h128             72/77        114/121       150/153        97/102       194/196   
+   poly+cls              72/78        113/120       148/151        98/102       194/196   
+   poly+h128 frames      84/88        106/114       159/161       115/117       209/210   
+   h128 direct          109/114       134/143       168/170       122/125       263/262   

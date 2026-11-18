@@ -1,0 +1,9 @@
+54 sessions (subject x camera), 3 frames per calibration point
+mean angular error (deg) per subject, on the frames not used for calibration; pitch error; pitch gain
+method       subject55 subject56  subject6  subject7  subject8  subject9      all  pitch  gain
+raw               4.05      3.48      5.66      6.21      4.02      4.25     4.61   3.08  1.00
+offset            3.76      3.23      5.78      4.44      3.44      3.95     4.10   2.47  1.00
+affine            3.71      2.75      5.94      4.44      3.43      3.96     4.04   2.42  0.99
+last layer        3.66      2.89      5.68      4.66      3.45      3.87     4.03   2.44  0.99
+cls ridge         3.60      2.84      5.71      4.13      3.32      3.92     3.92   2.40  0.99
+affine+ll         3.71      2.75      5.94      4.46      3.50      3.96     4.05   2.44  0.99
