@@ -14,6 +14,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tracking_landmarks import TrackingLandmarks  # noqa: E402
+
 
 def subjects(spec):
     first, last = (int(s.lstrip("p")) for s in spec.split("-"))
@@ -37,6 +40,7 @@ def main():
     engine = GazeDinoEngine(args.checkpoint)
     if not engine.load():
         sys.exit("cannot load GazeDINO")
+    landmarks = TrackingLandmarks(args.n2ucore)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     crop = {}
@@ -62,7 +66,8 @@ def main():
     for n, (name, path) in enumerate(sources):
         crop.clear()
         engine.reset()
-        engine.analyze(cv2.cvtColor(cv2.imread(str(path)), cv2.COLOR_BGR2RGB), 0)
+        rgb = cv2.cvtColor(cv2.imread(str(path)), cv2.COLOR_BGR2RGB)
+        engine.analyze(rgb, landmarks(rgb), 0)
         if "rgb" in crop:
             face = cv2.resize(cv2.cvtColor(crop["rgb"], cv2.COLOR_RGB2BGR), (224, 224), interpolation=cv2.INTER_AREA)
             cv2.imwrite(str(out / f"{name}.jpg"), face, [cv2.IMWRITE_JPEG_QUALITY, 95])

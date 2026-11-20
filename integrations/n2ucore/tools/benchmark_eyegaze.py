@@ -1,4 +1,8 @@
-"""Measure local GazeDINO inference using one existing RGB image, without a camera."""
+"""Measure local GazeDINO inference using one existing RGB image, without a camera.
+
+The landmarks come from the tracking node in Iride: here FaceLandmarker runs once on the image, set up as the
+tracking node, and the same points go with every frame, so the times are the gaze node's (crop and model).
+"""
 import argparse
 import hashlib
 import json
@@ -8,13 +12,31 @@ import time
 from collections import Counter
 from pathlib import Path
 
+import mediapipe as mp
 import numpy as np
 import psutil
 import torch
+from mediapipe.tasks.python import vision
 from PIL import Image
 
 from N2uCore.dyn.wrk.memprovider import resolveComputeResources
 from N2uCore.inference.gazedinoengine import GazeDinoEngine
+from N2uCore.resman import ResourceManager
+
+
+def trackingLandmarks(rgb):
+    """(478, 3) float32 FaceLandmarker points as the tracking node publishes them, zeros without a face."""
+    options = vision.FaceLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=ResourceManager().absolutePath("models/face_landmarker.task")),
+        min_face_detection_confidence=0.7,
+        min_tracking_confidence=0.5,
+        num_faces=1,
+    )
+    with vision.FaceLandmarker.create_from_options(options) as landmarker:
+        faces = landmarker.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb))).face_landmarks
+    if not faces:
+        return np.zeros((GazeDinoEngine.MESH_POINTS, 3), np.float32)
+    return np.array([(p.x, p.y, p.z) for p in faces[0]], np.float32)
 
 
 def benchmark(checkpoint, imagePath, deviceName, frames=30, warmup=5, maxFps=0):
@@ -27,6 +49,7 @@ def benchmark(checkpoint, imagePath, deviceName, frames=30, warmup=5, maxFps=0):
     imagePath = Path(imagePath)
     with Image.open(imagePath) as image:
         rgb = np.asarray(image.convert("RGB"))
+    mesh = trackingLandmarks(rgb)
     process = psutil.Process()
     baselineRss = process.memory_info().rss
     peakRss = baselineRss
@@ -55,7 +78,7 @@ def benchmark(checkpoint, imagePath, deviceName, frames=30, warmup=5, maxFps=0):
         loadSecs = time.perf_counter() - started
         loadedRss = process.memory_info().rss
         for _ in range(warmup):
-            engine.analyze(rgb, time.time_ns() // 1000)
+            engine.analyze(rgb, mesh, time.time_ns() // 1000)
         latencies = []
         statuses = Counter()
         peakDevice = deviceMemory()
@@ -63,7 +86,7 @@ def benchmark(checkpoint, imagePath, deviceName, frames=30, warmup=5, maxFps=0):
         started = time.perf_counter()
         for _ in range(frames):
             frameStart = time.perf_counter()
-            result = engine.analyze(rgb, time.time_ns() // 1000)
+            result = engine.analyze(rgb, mesh, time.time_ns() // 1000)
             latencies.append(time.perf_counter() - frameStart)
             statuses[result["status"]] += 1
             memory = deviceMemory()

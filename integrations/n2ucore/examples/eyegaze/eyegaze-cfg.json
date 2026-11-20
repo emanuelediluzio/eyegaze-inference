@@ -23,6 +23,10 @@
       "VideoStream": {
         "node": "GazeCamera",
         "channel": "VideoStream"
+      },
+      "Landmarks": {
+        "node": "GazeTracking",
+        "channel": "Landmarks"
       }
     },
     "address": "127.0.0.1"

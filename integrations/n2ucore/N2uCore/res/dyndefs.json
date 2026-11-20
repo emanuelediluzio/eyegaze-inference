@@ -4,7 +4,7 @@
     "module": "N2uCore.dyn.eyegaze",
     "class": "GazeDirection",
     "label": "Gaze Direction",
-    "description": "RGB face to gaze yaw/pitch and unit 3D gaze vector, eye position and size for the screen point, plus a real-time quality score (face size, stability) with distance hints. Analyses one face. Fixed GazeDINO model (Core ML on macOS, int8 PyTorch elsewhere), CPU or GPU compute device; it analyses as many frames per second as the device sustains, at most the camera rate and 60.",
+    "description": "RGB face to gaze yaw/pitch and unit 3D gaze vector, eye position and size for the screen point, plus a real-time quality score (face size, stability) with distance hints. Analyses one face, from the Landmarks of a Visible Tracking node on the same camera. Fixed GazeDINO model (Core ML on macOS, int8 PyTorch elsewhere), CPU or GPU compute device; it analyses as many frames per second as the device sustains, at most the camera rate and 60.",
     "PROPS_SCHEMA": {
       "device": {
         "type": "ENUM",
@@ -20,6 +20,10 @@
       {
         "name": "VideoStream",
         "type": "VIDEO_VISIBLE"
+      },
+      {
+        "name": "Landmarks",
+        "type": "POINTS_3D"
       }
     ],
     "outputs": [

@@ -54,7 +54,7 @@ The model path is fixed at `models/gazedino/model.joblib`, resolved through the 
 
 **macOS: Core ML model (optional, recommended on Macs).** Next to the joblib, place the int8 Core ML export at `N2uCore/res/models/gazedino/model.mlpackage` (87 MB) and install `coremltools` in the same environment. On macOS the node then uses it instead of the joblib: same accuracy (MPIIFaceGaze 6.37 vs 6.35 deg, same screen error on recordings), engine step ~20 ms instead of ~70 ms on an M1 Mac mini. Without the package or coremltools it falls back to the joblib. Build the package with `experiments/model-size/export_coreml.py` (variant `_w8`); measurements are in `experiments/model-size/README.md`.
 
-Face landmarks come from MediaPipe FaceLandmarker with `models/face_landmarker.task`, the model file the tracking nodes already use (it works with mediapipe 0.10.21 and 1.2.3; the legacy FaceMesh is gone in 1.2.3). One face per frame, as in the tracking nodes.
+Face landmarks come from a Visible Tracking node on the same camera: its `Landmarks` channel publishes the 478 raw normalized FaceLandmarker points (irises included, all zeros without a face) with the frame's packID, and the gaze node pairs them with the frame (N2uCore_dev a5c5e98). MediaPipe therefore runs once per frame, in the tracking node, and the gaze node does not work without one. One face per frame, as in the tracking nodes.
 
 DINOv2 source must already be available in the local Torch Hub cache at `facebookresearch_dinov2_main`, containing `hubconf.py`. Runtime loading is local-only and fails with a clear error if the cache is missing. `pretrained=False` is used: backbone weights are already included in the joblib.
 
@@ -123,7 +123,7 @@ Gaze Direction follows the **`MlDevice` / `MlTicker`** pattern: the node decodes
 
 The engine is `GazeDinoEngine(object)` in `gazedinoengine.py`. A standard PyTorch `Sequential` composes the existing backbone and head; there is no nested network subclass. Checkpoint keys remain `backbone.*` and `head.*`. Internal instance state uses underscore-prefixed camelCase names, dependencies are declared explicitly at module scope, as in the framework’s voice node. Node and ticker construction do not load weights or create a face tracker; both are created by the ML ticker’s model-load hook. Existing snake_case JSON field names are retained as the channel protocol, not Python variable names.
 
-Yaw and pitch are neural-network predictions. The engine also reports the eye positions in the image (`eyes_px`), a quality score with a head position hint, and `iris`: the iris position between the eye corners (MediaPipe Face Mesh landmarks 468/133/33 and 473/362/263, in eye widths, mean of both eyes) and the eye openness. The screen calibration uses the iris as a light correction to the angles (`IRIS_WEIGHT` 0.25, ridge only on the iris terms), which reduces the drift of the dot when the head moves. No model retraining or new joblib is needed.
+Yaw and pitch are neural-network predictions. The engine also reports the eye positions in the image (`eyes_px`), a quality score with a head position hint, and `iris`: the iris position between the eye corners (FaceLandmarker landmarks 468/133/33 and 473/362/263, in eye widths, mean of both eyes) and the eye openness. The screen calibration uses the iris as a light correction to the angles (`IRIS_WEIGHT` 0.25, ridge only on the iris terms), which reduces the drift of the dot when the head moves. No model retraining or new joblib is needed.
 
 ## Joblib contents and export
 

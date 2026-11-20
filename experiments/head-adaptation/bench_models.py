@@ -3,7 +3,8 @@
     python bench_models.py N2UCORE_DIR TEACHER_CKPT STUDENT_CKPT SESSION_DIR [--backbone dinov2_vits14]
 
 Model alone: one 224x224 crop at a time (as the engine runs), on the engine's device and precision (fp16 on a GPU)
-and on the CPU in fp32. Engine step: GazeDinoEngine.analyze on 200 recorded frames (FaceMesh + crop + model).
+and on the CPU in fp32. Engine step: GazeDinoEngine.analyze on 200 recorded frames (crop + model; the landmarks come from the tracking
+node, so they are computed beforehand and not timed).
 Times are medians after a warm-up.
 """
 import argparse
@@ -17,6 +18,9 @@ import numpy as np
 import torch
 
 from extract_session import studentModel
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tracking_landmarks import TrackingLandmarks  # noqa: E402
 
 
 def timeModel(model, device, dtype, runs=60):
@@ -46,6 +50,9 @@ def main():
     session = Path(args.session)
     log = [json.loads(line) for line in open(session / "log.jsonl")][:400:2]
     frames = [cv2.cvtColor(cv2.imread(str(session / "frames" / f"{r['i']:06d}.jpg")), cv2.COLOR_BGR2RGB) for r in log]
+    landmarks = TrackingLandmarks(args.n2ucore)
+    meshes = [landmarks(rgb) for rgb in frames]
+    landmarks.close()
 
     for name in ("teacher", "student"):
         engine = GazeDinoEngine(args.teacher)
@@ -56,9 +63,9 @@ def main():
         params = sum(p.numel() for p in engine._model.parameters()) / 1e6
         gpu = timeModel(engine._model, engine._device, engine._dtype)
         steps = []
-        for i, (r, rgb) in enumerate(zip(log, frames)):
+        for i, (r, rgb, mesh) in enumerate(zip(log, frames, meshes)):
             start = time.perf_counter()
-            engine.analyze(rgb, r["mono"] * 1e6)
+            engine.analyze(rgb, mesh, r["mono"] * 1e6)
             if i >= 20:
                 steps.append(time.perf_counter() - start)
         device = engine._device.type

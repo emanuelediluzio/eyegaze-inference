@@ -6,7 +6,8 @@
 MPII_DIR has pXX/pXX.txt and pXX/dayYY/NNNN.jpg (the dataset as released; per line: image, screen point, 6
 landmarks, head rotation and translation, face centre, gaze target, eye). The label of a frame is the direction from
 the face centre to the gaze target, in camera coordinates, turned into (yaw, pitch) as GazeGene's labels. Each frame
-goes alone through GazeDinoEngine (FaceMesh, face crop, model; the smoothing is reset, so the angle is the model's).
+goes alone through GazeDinoEngine (landmarks as the tracking node gives them, face crop, model; the smoothing is
+reset, so the angle is the model's).
 --per-subject frames per person, evenly spaced. Errors, in degrees:
 
   raw          the model's angles as they are
@@ -21,6 +22,8 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "head-adaptation"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tracking_landmarks import TrackingLandmarks  # noqa: E402
 from extract_session import CoreMLModel, studentModel  # noqa: E402
 
 
@@ -69,6 +72,7 @@ def main():
         engine._model = studentModel(args.student, args.backbone).eval().to(engine._device, engine._dtype)
     if args.coreml:
         engine._model, engine._device, engine._dtype = CoreMLModel(args.coreml, args.units), torch.device("cpu"), torch.float32
+    landmarks = TrackingLandmarks(args.n2ucore)
 
     rows = {k: [] for k in ("subject", "image", "pred", "true")}
     for subjectDir in sorted(Path(args.mpii).glob("p[0-9][0-9]")):
@@ -76,7 +80,7 @@ def main():
         for l in [lines[i] for i in np.linspace(0, len(lines) - 1, args.per_subject).astype(int)]:
             rgb = cv2.cvtColor(cv2.imread(str(subjectDir / l[0])), cv2.COLOR_BGR2RGB)
             engine.reset()
-            s = engine.analyze(rgb, 0) or {}
+            s = engine.analyze(rgb, landmarks(rgb), 0) or {}
             if s.get("status") != "ok":
                 continue
             fc, gt = np.array(l[21:24], float), np.array(l[24:27], float)
@@ -84,6 +88,7 @@ def main():
             rows["pred"].append([s["yaw_rad"], s["pitch_rad"]]); rows["true"].append(angles(gt - fc))
         print(subjectDir.name, sum(s == subjectDir.name for s in rows["subject"]), flush=True)
     engine.close()
+    landmarks.close()
 
     D = {k: np.asarray(v) for k, v in rows.items()}
     if args.out:

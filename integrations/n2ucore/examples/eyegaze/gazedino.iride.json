@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "Gaze Direction -> Screen Point of Gaze",
+  "name": "Gaze Direction (landmarks from Visible Tracking) -> Screen Point of Gaze",
   "appKey": "8a320228933a1d960656d64e56c7596c527a560f4c6b3b2cb07ec49839453e75e0b3b48cc6d22a99f6c77d322b84fb10dd04d1329f8b3cf2fcf0c0fa2efbd2c0",
   "nodes": [
     {
@@ -40,6 +40,20 @@
       "y": 120
     },
     {
+      "id": "tracking",
+      "nodeNumber": 4,
+      "type": "N2uCore.dyn.trackingvisible.VisibleTracking",
+      "sysinit": "SysInit",
+      "settings": {
+        "name": "GazeTracking",
+        "device": "GPU",
+        "detection": 0.7,
+        "tracking": 0.5
+      },
+      "x": 260,
+      "y": 300
+    },
+    {
       "id": "gaze",
       "nodeNumber": 2,
       "type": "N2uCore.dyn.eyegaze.GazeDirection",
@@ -70,6 +84,20 @@
       "to": "gaze",
       "outputName": "VideoStream",
       "inputName": "VideoStream"
+    },
+    {
+      "id": "rgb-to-tracking",
+      "from": "camera",
+      "to": "tracking",
+      "outputName": "VideoStream",
+      "inputName": "VisibleStream"
+    },
+    {
+      "id": "landmarks",
+      "from": "tracking",
+      "to": "gaze",
+      "outputName": "Landmarks",
+      "inputName": "Landmarks"
     },
     {
       "id": "direction-to-screen",

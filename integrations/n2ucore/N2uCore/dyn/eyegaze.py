@@ -16,6 +16,7 @@ from N2uCore.dyn.wrk.memprovider        import resolveComputeResources
 from N2uCore.dyn.wrk.input              import WorkerFlowInput
 from N2uCore.miniflow.channel           import FlowChannelType
 from N2uCore.miniflow.proto             import FlowEvent, FlowResource
+from N2uCore.miniflow.flowasync         import FlowChannelDataAggregator
 from N2uCore.signal                     import Signal, AttachMode
 from N2uCore.resman                     import ResourceManager
 from N2uCore.multimedia.imgdec          import ImageDecoder
@@ -56,7 +57,7 @@ class GazeDirectionTicker(MlTicker):
         self._engine.close()
         self._engine = None
 
-    def infer(self, image, ts, packID=-1) -> None:
+    def infer(self, image, mesh, ts, packID=-1) -> None:
         # one estimate per call: the node sends the next frame only after it
         if time.time() < self._retryAt:
             sample = {"status": "model_unavailable"}
@@ -65,7 +66,7 @@ class GazeDirectionTicker(MlTicker):
             self.err("Model not loaded: retrying in {} s".format(self.RETRY_SECS))
             sample = {"status": "model_unavailable"}
         else:
-            sample = self._engine.analyze(image, ts) or {"status": "error"}
+            sample = self._engine.analyze(image, mesh, ts) or {"status": "error"}
 
         self.estimate.trigger([{"sample": sample, "ts": ts, "packID": packID}])
 
@@ -79,10 +80,18 @@ class GazeDirection(MlDevice):
     def __init__(self):
         super().__init__()
 
-        self._flow = None
-        self._receiver = None
+        self._imgFlow = None
+        self._ptsFlow = None
+        self._imgReceiver = None
+        self._ptsReceiver = None
+        self._imgChanID = None
+        self._ptsChanID = None
+        self._imgPackID = None
+        self._ptsPackID = None
+        self._aggregator = None
         self._decoder = None
-        self._source = None
+        self._imgSource = None
+        self._meshSource = None
 
         self._output = None           # GazeDirection (JSON), read by ScreenPointOfGaze
         self._points = None           # GazePoints (POINTS_2D), drawn on the card
@@ -106,10 +115,13 @@ class GazeDirection(MlDevice):
             return False
         self._device, self._memProvider = resources
 
-        self._source = self.service().flowPack()["VideoStream"]
+        self._imgSource = self.service().flowPack()["VideoStream"]
+        self._meshSource = self.service().flowPack()["Landmarks"]
 
-        self._flow = WorkerFlowInput(self.service())
-        self._flow.setCredentials("guest", "password")
+        self._imgFlow = WorkerFlowInput(self.service())
+        self._imgFlow.setCredentials("guest", "password")
+        self._ptsFlow = WorkerFlowInput(self.service())
+        self._ptsFlow.setCredentials("guest", "password")
 
         self._decoder = ImageDecoder()
         return True
@@ -135,7 +147,8 @@ class GazeDirection(MlDevice):
         return ResourceManager().absolutePath(GazeDirectionTicker.MODEL_PATH)
 
     def _onInit(self) -> bool:
-        source = "{}.{}".format(self._source["node"], self._source["channel"])
+        source = "{}.{}".format(self._imgSource["node"], self._imgSource["channel"])
+        meshSource = "{}.{}".format(self._meshSource["node"], self._meshSource["channel"])
 
         self._output = self.service().addChannel(
             "GazeDirection",
@@ -145,7 +158,7 @@ class GazeDirection(MlDevice):
                 "schema": "gaze-direction.v1",
                 "imageSize": None,              # set on subscription, like the rate
                 "angleUnit": "radians",
-                "dependsOn": [source],
+                "dependsOn": [source, meshSource],
                 "coordinateSpace": "camera",
                 "vectorConvention": "[sin(yaw)*cos(pitch), -sin(pitch), -cos(yaw)*cos(pitch)]",
                 "pupilDiameterAvailable": False,
@@ -156,19 +169,25 @@ class GazeDirection(MlDevice):
         self._points = self.service().addChannel(
             "GazePoints",
             FlowChannelType.POINTS_2D,
-            {"dependsOn": [source]},
+            {"dependsOn": [source, meshSource]},
         )
 
         if not super()._onInit():
             return False
 
-        self._flow.setTargetByAnnounce(self._source["node"])
-        self._flow.setAutoSubscribeChannels([self._source["channel"]])
-        self._flow.subscribed.attach(self._onSubscribe)
-        self._flow.disabled.attach(self._onDisable)
-        self._flow.eventGrabbed.attach(self._onInputProperties)
+        self._imgFlow.setTargetByAnnounce(self._imgSource["node"])
+        self._imgFlow.setAutoSubscribeChannels([self._imgSource["channel"]])
+        self._imgFlow.subscribed.attach(self._onSubscribe)
+        self._imgFlow.disabled.attach(self._onDisable)
+        self._imgFlow.eventGrabbed.attach(self._onInputProperties)
 
-        self.spot().announced.attach(self._flow.onAnnounce)
+        self._ptsFlow.setTargetByAnnounce(self._meshSource["node"])
+        self._ptsFlow.setAutoSubscribeChannels([self._meshSource["channel"]])
+        self._ptsFlow.subscribed.attach(self._onSubscribe)
+        self._ptsFlow.disabled.attach(self._onDisable)
+
+        self.spot().announced.attach(self._imgFlow.onAnnounce)
+        self.spot().announced.attach(self._ptsFlow.onAnnounce)
         return self.spot().startGrabbingAnnounce()
 
     def _onThreadEnabled(self, thread) -> None:
@@ -178,32 +197,57 @@ class GazeDirection(MlDevice):
 ###############################################################################
 
     def _onDisable(self, flow) -> None:
-        self.service().emitEvent(FlowEvent.EXTERNAL, "INPUT_DISCONNECTION", self._source)
+        if flow is self._imgFlow:
+            self._imgReceiver = None
+            lostSrc = self._imgSource
+        else:
+            self._ptsReceiver = None
+            lostSrc = self._meshSource
 
+        self.service().emitEvent(FlowEvent.EXTERNAL, "INPUT_DISCONNECTION", lostSrc)
+
+        if self.spot().isSendingEnabled():
+            self.quitSpotAnnouncing()
         self.spot().announced.attach(flow.onAnnounce)
-        self.spot().startGrabbingAnnounce()
-        self.quitSpotAnnouncing()
+        if not self.spot().isReceivingEnabled():
+            self.spot().startGrabbingAnnounce()
 
     def _onSubscribe(self, flow, chanID) -> None:
-        self.spot().stopGrabbingAnnounce()
+        receiver = flow.buildReceiver(chanID)
+        if flow is self._imgFlow and receiver.props()["type"] != "VIDEO_VISIBLE":
+            # refused before it is kept: no frame reaches a decoder never set up
+            self.err("Invalid device type: {}".format(receiver.props()["type"]))
+            return
+        receiver.hasData.attach(self._onDataCome)
         self.spot().announced.detach(flow.onAnnounce)
 
-        if self._receiver is not None:
-            self.service().emitEvent(FlowEvent.EXTERNAL, "INPUT_RECONNECTION", self._source)
+        if flow is self._imgFlow:
+            if self._imgReceiver is not None:
+                self.service().emitEvent(FlowEvent.EXTERNAL, "INPUT_RECONNECTION", self._imgSource)
+            self._imgReceiver = receiver
+            self._imgChanID = chanID
+            props = receiver.props()
+            self._setupDecoder(props)
+            self._updateOutputs(props)
+        else:
+            if self._ptsReceiver is not None:
+                self.service().emitEvent(FlowEvent.EXTERNAL, "INPUT_RECONNECTION", self._meshSource)
+            self._ptsReceiver = receiver
+            self._ptsChanID = chanID
 
-        self._receiver = flow.buildReceiver(chanID)
-        props = self._receiver.props()
-
-        if props["type"] != "VIDEO_VISIBLE":
-            self.err("Invalid device type: {}".format(props["type"]))
-            return
-
-        self._setupDecoder(props)
-        self._updateOutputs(props)
-
-        self._receiver.clear()
-        self._receiver.hasData.attach(self._onDataCome)
-        self.initSpotAnnouncing()
+        if self._imgReceiver is not None and self._ptsReceiver is not None:
+            self.spot().stopGrabbingAnnounce()
+            if self._aggregator is None:
+                self._aggregator = FlowChannelDataAggregator()
+                self._aggregator.addChannel(self._imgReceiver.props())
+                self._aggregator.addChannel(self._ptsReceiver.props())
+                self._imgPackID = "{}.{}".format(self._imgSource["node"], self._imgChanID)
+                self._ptsPackID = "{}.{}".format(self._meshSource["node"], self._ptsChanID)
+            else:
+                self._aggregator.reset()
+            self._imgReceiver.clear()
+            self._ptsReceiver.clear()
+            self.initSpotAnnouncing()
 
     def _setupDecoder(self, props) -> bool:
         return self._decoder.setup(props["size"], props["depth"], props["pxFmt"], props["encoding"]["codec"])
@@ -213,7 +257,17 @@ class GazeDirection(MlDevice):
         self.service().channelByID(self._points).setProperties({"rate": inputProps["rate"]})
 
     def _onDataCome(self, receiver) -> None:
+        if self._imgReceiver is None or self._ptsReceiver is None:
+            receiver.clear()
+            return
+
         pack = receiver.next()
+        packs = self._aggregator.check(pack)
+        if packs is None:
+            return
+        if len(packs) != 2:
+            self.err("Aggregated pack list is NOT valid")
+            return
 
         if self.service().channelByID(self._output).isEmpty() and self.service().channelByID(self._points).isEmpty():
             return
@@ -222,9 +276,13 @@ class GazeDirection(MlDevice):
         if self._inFlight:
             return
 
-        image = self._decoder.decode(pack.data)
+        imgPack = packs[self._imgPackID]
+        image = self._decoder.decode(imgPack.data)
+        ptsPack = packs[self._ptsPackID]
+        mesh = np.frombuffer(ptsPack.data, np.float32).reshape(-1, 3)
+
         self._inFlight = True
-        self._ticker.loop().invokeSlot(self._ticker.infer, {"image": image, "ts": pack.ts, "packID": pack.packID})
+        self._ticker.loop().invokeSlot(self._ticker.infer, {"image": image, "mesh": mesh, "ts": imgPack.ts, "packID": imgPack.packID})
 
     def _onEstimate(self, pack) -> None:
         self._inFlight = False
@@ -255,9 +313,11 @@ class GazeDirection(MlDevice):
             return
         if resType != FlowResource.CHANNEL:
             return
-        if self._receiver is None:
+        if flow is not self._imgFlow:
             return
-        if resID != self._receiver.chanID():
+        if self._imgReceiver is None:
+            return
+        if resID != self._imgChanID:
             return
 
         props = flow.channelProperties(resID)

@@ -2,15 +2,17 @@
 
   a. ``_pointsFrom``: eye dot at the midpoint of ``eyes_px``;
   b. ``_onSubscribe``: the second subscription emits INPUT_RECONNECTION, the
-     decoder is set up for the input;
+     decoder is set up for the input; a non-visible video is refused before it
+     is kept; the frames start once VideoStream and Landmarks are both there;
   c. ``_updateOutputs``: both outputs get the input rate, GazeDirection also
      the input image size;
   d. ``_onEstimate``: the sample is published as the engine gave it, with the
      frame ts and packID; dots only for an "ok" sample;
   e. ``_onInputProperties``: RESOURCE_CHANGED of the input channel sets the
      decoder up again (as ImageGeometry), other events are ignored;
-  f. ``_onDataCome``: the frame is decoded in the node and sent to the
-     ticker, one at a time (the model sets the pace).
+  f. ``_onDataCome``: the frame and the tracking node's landmarks with the same
+     packID are paired, the frame is decoded in the node and sent to the ticker
+     with the (478, 3) landmarks, one at a time (the model sets the pace).
 
 Built without an event loop (``__new__`` + attributes, MagicMock where
 needed), imitating tests/dyn/test_roier_input_properties.py.
@@ -23,10 +25,15 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
+import numpy as np
+
 from N2uCore.dyn.eyegaze import GazeDirection
 from N2uCore.miniflow.proto import FlowEvent, FlowResource
 
-PROPS = {"type": "VIDEO_VISIBLE", "size": {"w": 640, "h": 480}, "depth": 3, "pxFmt": "UINT8_T", "encoding": {"codec": "JPG"}, "rate": 30}
+PROPS = {"type": "VIDEO_VISIBLE", "size": {"w": 640, "h": 480}, "depth": 3, "pxFmt": "UINT8_T", "encoding": {"codec": "JPG"}, "rate": 30,
+         "owner": "cam", "chanID": 5, "name": "VideoStream"}
+MESH_PROPS = {"type": "POINTS_3D", "owner": "track", "chanID": 3, "name": "Landmarks"}
+MESH = np.arange(478 * 3, dtype=np.float32).reshape(478, 3)
 
 
 def _sample(**fields):
@@ -43,10 +50,13 @@ def _makeNode():
         GazeDirection: the bare node under test (no __init__ run).
     """
     node = GazeDirection.__new__(GazeDirection)
-    node._receiver = None
+    node._imgFlow, node._ptsFlow = MagicMock(), MagicMock()
+    node._imgReceiver = node._ptsReceiver = node._aggregator = None
+    node._imgChanID = node._ptsChanID = None
     node._decoder = MagicMock()
     node._ticker = MagicMock()
-    node._source = {"node": "cam", "channel": "VideoStream"}
+    node._imgSource = {"node": "cam", "channel": "VideoStream"}
+    node._meshSource = {"node": "track", "channel": "Landmarks"}
     node._output = 11
     node._points = 12
     node._inFlight = True
@@ -65,8 +75,23 @@ def _makeNode():
 def _pack(ts=1000, packID=7):
     """An input frame pack."""
     pack = MagicMock()
-    pack.data, pack.ts, pack.packID = b"jpg", ts, packID
+    pack.data, pack.ts, pack.packID, pack.owner, pack.chanID = b"jpg", ts, packID, "cam", 5
     return pack
+
+
+def _meshPack(ts=1000, packID=7):
+    """The tracking node's Landmarks pack of the same frame."""
+    pack = MagicMock()
+    pack.data, pack.ts, pack.packID, pack.owner, pack.chanID = MESH.tobytes(), ts, packID, "track", 3
+    return pack
+
+
+def _subscribeBoth(node):
+    """Subscribe VideoStream and Landmarks, as the two flows do once their sources are announced."""
+    for flow, chanID, props in ((node._imgFlow, 5, PROPS), (node._ptsFlow, 3, MESH_PROPS)):
+        flow.buildReceiver.return_value = MagicMock()
+        flow.buildReceiver.return_value.props.return_value = props
+        node._onSubscribe(flow, chanID)
 
 
 class TestPointsFrom(unittest.TestCase):
@@ -89,32 +114,44 @@ class TestSubscribe(unittest.TestCase):
     def test_second_subscription_is_a_reconnection(self):
         """(b) first subscription: no event; second one: INPUT_RECONNECTION."""
         node = _makeNode()
-        flow = MagicMock()
+        flow = node._imgFlow
         flow.buildReceiver.return_value.props.return_value = PROPS
 
         node._onSubscribe(flow, 5)
         node.service().emitEvent.assert_not_called()
 
         node._onSubscribe(flow, 5)
-        node.service().emitEvent.assert_called_once_with(FlowEvent.EXTERNAL, "INPUT_RECONNECTION", node._source)
+        node.service().emitEvent.assert_called_once_with(FlowEvent.EXTERNAL, "INPUT_RECONNECTION", node._imgSource)
 
     def test_thermal_input_is_refused(self):
-        """(b) an input that is not VIDEO_VISIBLE -> err, no decoder, no announce (as ImageGeometry)."""
+        """(b) an input that is not VIDEO_VISIBLE -> err, not kept, no decoder, no announce (as ImageGeometry)."""
         node = _makeNode()
-        flow = MagicMock()
-        flow.buildReceiver.return_value.props.return_value = {**PROPS, "type": "VIDEO_THERMAL"}
-        node._onSubscribe(flow, 5)
+        node._imgFlow.buildReceiver.return_value.props.return_value = {**PROPS, "type": "VIDEO_THERMAL"}
+        node._onSubscribe(node._imgFlow, 5)
+        node._ptsFlow.buildReceiver.return_value.props.return_value = MESH_PROPS
+        node._onSubscribe(node._ptsFlow, 3)
         node.err.assert_called_once()
+        self.assertIsNone(node._imgReceiver)
         node._decoder.setup.assert_not_called()
         node.initSpotAnnouncing.assert_not_called()
+
+    def test_frames_start_with_both_inputs(self):
+        """(b) VideoStream alone -> no announce yet; with Landmarks too -> announce, aggregation of the two."""
+        node = _makeNode()
+        node._imgFlow.buildReceiver.return_value.props.return_value = PROPS
+        node._onSubscribe(node._imgFlow, 5)
+        node.initSpotAnnouncing.assert_not_called()
+        node._ptsFlow.buildReceiver.return_value.props.return_value = MESH_PROPS
+        node._onSubscribe(node._ptsFlow, 3)
+        node.initSpotAnnouncing.assert_called_once()
+        self.assertEqual((node._imgPackID, node._ptsPackID), ("cam.5", "track.3"))
 
     def test_decoder_set_up_for_the_input(self):
         """(b) the decoder gets size, depth, pixel format and codec of the input."""
         node = _makeNode()
-        flow = MagicMock()
-        flow.buildReceiver.return_value.props.return_value = PROPS
+        node._imgFlow.buildReceiver.return_value.props.return_value = PROPS
 
-        node._onSubscribe(flow, 5)
+        node._onSubscribe(node._imgFlow, 5)
 
         node._decoder.setup.assert_called_once_with({"w": 640, "h": 480}, 3, "UINT8_T", "JPG")
 
@@ -173,14 +210,14 @@ class TestInputProperties(unittest.TestCase):
 
     def _node(self):
         node = _makeNode()
-        node._receiver = MagicMock()
-        node._receiver.chanID.return_value = 5
+        node._imgReceiver = MagicMock()
+        node._imgChanID = 5
         return node
 
     def test_resource_changed_sets_the_decoder_up_again(self):
         """(e) RESOURCE_CHANGED of the input channel -> new decoder setup and output rate."""
         node = self._node()
-        flow = MagicMock()
+        flow = node._imgFlow
         flow.channelProperties.return_value = {**PROPS, "size": {"w": 1280, "h": 720}}
 
         node._onInputProperties(flow, FlowEvent.RESOURCE_CHANGED, "cam", "VideoStream", FlowResource.CHANNEL, 5, 0, None)
@@ -191,7 +228,8 @@ class TestInputProperties(unittest.TestCase):
     def test_other_channel_is_ignored(self):
         """(e) a change of another channel -> nothing."""
         node = self._node()
-        node._onInputProperties(MagicMock(), FlowEvent.RESOURCE_CHANGED, "cam", "x", FlowResource.CHANNEL, 9, 0, None)
+        node._onInputProperties(node._imgFlow, FlowEvent.RESOURCE_CHANGED, "cam", "x", FlowResource.CHANNEL, 9, 0, None)
+        node._onInputProperties(node._ptsFlow, FlowEvent.RESOURCE_CHANGED, "track", "Landmarks", FlowResource.CHANNEL, 5, 0, None)
         node._decoder.setup.assert_not_called()
 
 
@@ -205,40 +243,72 @@ class TestDataCome(unittest.TestCase):
         receiver.isEmpty.side_effect = lambda: not queue
         return receiver
 
-    def test_frame_is_decoded_and_sent(self):
-        """(f) a free ticker: the frame is decoded in the node and goes to the ticker."""
+    def _node(self):
         node = _makeNode()
+        _subscribeBoth(node)
         node._inFlight = False
+        node._decoder.reset_mock()
+        return node
+
+    def _frame(self, node, ts=1000, packID=7):
+        """Frame and landmarks of the same packID, the landmarks first."""
+        node._onDataCome(self._receiver(_meshPack(ts, packID)))
+        node._onDataCome(self._receiver(_pack(ts, packID)))
+
+    def test_frame_is_decoded_and_sent_with_its_landmarks(self):
+        """(f) a free ticker: the frame is decoded in the node and goes to the ticker with the (478, 3) landmarks."""
+        node = self._node()
         node._decoder.decode.return_value = "image"
 
-        node._onDataCome(self._receiver(_pack(ts=2, packID=2)))
+        self._frame(node, ts=2, packID=2)
 
-        node._ticker.loop().invokeSlot.assert_called_once_with(node._ticker.infer, {"image": "image", "ts": 2, "packID": 2})
+        node._ticker.loop().invokeSlot.assert_called_once()
+        slot, args = node._ticker.loop().invokeSlot.call_args[0]
+        self.assertIs(slot, node._ticker.infer)
+        self.assertEqual((args["image"], args["ts"], args["packID"]), ("image", 2, 2))
+        np.testing.assert_array_equal(args["mesh"], MESH)
         self.assertTrue(node._inFlight)
+
+    def test_frame_waits_for_its_landmarks(self):
+        """(f) a frame alone, or with the landmarks of another frame -> nothing sent."""
+        node = self._node()
+        node._onDataCome(self._receiver(_pack(packID=8)))
+        node._onDataCome(self._receiver(_meshPack(packID=9)))
+        node._ticker.loop().invokeSlot.assert_not_called()
+
+    def test_nothing_before_both_inputs(self):
+        """(f) only VideoStream subscribed -> the frame is dropped."""
+        node = _makeNode()
+        node._inFlight = False
+        node._imgFlow.buildReceiver.return_value.props.return_value = PROPS
+        node._onSubscribe(node._imgFlow, 5)
+        receiver = self._receiver(_pack())
+        node._onDataCome(receiver)
+        receiver.clear.assert_called_once()
+        node._ticker.loop().invokeSlot.assert_not_called()
 
     def test_nobody_reading_skips_the_frame(self):
         """(f) no subscriber on either output -> no decoding, no inference (as ImageGeometry)."""
-        node = _makeNode()
-        node._inFlight = False
+        node = self._node()
         node.service().channelByID.return_value.isEmpty.return_value = True
-        node._onDataCome(self._receiver(_pack()))
+        self._frame(node)
         node._decoder.decode.assert_not_called()
         node._ticker.loop().invokeSlot.assert_not_called()
 
     def test_busy_ticker_drops_the_frame(self):
         """(f) a frame in flight -> the new one is dropped, not decoded."""
-        node = _makeNode()
-        node._onDataCome(self._receiver(_pack()))
+        node = self._node()
+        node._inFlight = True
+        self._frame(node)
         node._decoder.decode.assert_not_called()
         node._ticker.loop().invokeSlot.assert_not_called()
 
     def test_free_ticker_takes_the_next_frame_at_once(self):
         """(f) no rate limit of its own: a frame right after the previous estimate is sent."""
-        node = _makeNode()
-        node._inFlight = False
-        node._onDataCome(self._receiver(_pack()))
+        node = self._node()
+        self._frame(node, packID=1)
         node._onEstimate({"sample": {"status": "no_face"}, "ts": 1, "packID": 1})
-        node._onDataCome(self._receiver(_pack()))
+        self._frame(node, packID=2)
         self.assertEqual(node._ticker.loop().invokeSlot.call_count, 2)
 
 

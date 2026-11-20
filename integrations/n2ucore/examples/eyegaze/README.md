@@ -1,25 +1,27 @@
 # Gaze Direction → Screen Point of Gaze
 
-Two separate nodes connected through Flow:
+Two separate nodes connected through Flow, with the face landmarks of a Visible Tracking node on the same camera:
 
 ```text
+CvCamera.VideoStream → VisibleTracking.VisibleStream
 CvCamera.VideoStream → GazeDirection.VideoStream
+VisibleTracking.Landmarks → GazeDirection.Landmarks
 GazeDirection.GazeDirection → ScreenPointOfGaze.GazeDirection
 ```
 
 | Node | Class | Input | Output |
 |---|---|---|---|
-| Gaze Direction | `N2uCore.dyn.eyegaze.GazeDirection` (`MlDevice`) | RGB face video | `GazeDirection`: yaw/pitch in radians and degrees, unit 3D vector, status and timestamp |
+| Gaze Direction | `N2uCore.dyn.eyegaze.GazeDirection` (`MlDevice`) | RGB face video and its 478 FaceLandmarker points (`Landmarks`, same packID) | `GazeDirection`: yaw/pitch in radians and degrees, unit 3D vector, status and timestamp |
 | Screen Point of Gaze | `N2uCore.dyn.screenpointofgaze.ScreenPointOfGaze` (`SwDevice`) | Gaze direction | `ScreenPoint`: X/Y in pixels, calibrated screen dimensions and status |
 
-The model runs **only in the first node**. The second loads neither PyTorch nor MediaPipe and does not open a camera: it applies a lightweight polynomial transformation and manages calibration. Gaze Direction can run on its own. Screen Point of Gaze requires the first node’s output, following the `gaze-direction.v1` contract.
+MediaPipe runs **only in the tracking node**: Gaze Direction pairs each frame with the tracking node's landmarks of the same packID, crops the face and runs the model, and it does nothing without a tracking node. The model runs **only in Gaze Direction**. Screen Point of Gaze loads neither PyTorch nor MediaPipe and does not open a camera: it applies a lightweight polynomial transformation and manages calibration. Gaze Direction can run on its own. Screen Point of Gaze requires the first node’s output, following the `gaze-direction.v1` contract.
 
 Both channels use the existing `FlowChannelType.GAZE` with UTF-8 JSON, following `TobiiGlassesTracking.GazeData`. The channel type identifies the gaze data family; the `schema` and coordinate-space metadata identify the payload. GazeDINO does not fabricate Tobii pupil measurements or `gaze2d` scene coordinates. Consumers must recognize `gaze-direction.v1` or `screen-point-of-gaze.v1`; sharing the GAZE channel type does not make these payloads interchangeable with Tobii data. Iride forwards raw GAZE JSON to the existing card sessions and decodes each schema separately.
 
 ## Target computer configuration
 
 Install the integration using the [integration README](https://github.com/emanuelediluzio/eyegaze-inference/blob/main/integrations/n2ucore/README.md).
-Assign the three nodes to a SysInit with the required ML dependencies. Import
+Assign the four nodes to a SysInit with the required ML dependencies. Import
 `gazedino.iride.json` and choose the correct SysInit; the example uses `SysInit`.
 Webcam ID `0` selects the first camera on the computer executing the node;
 `1`, `2`, etc. select other cameras. Device ordering can differ between machines.

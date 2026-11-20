@@ -34,7 +34,7 @@ New Screen Point packets use the existing normalized GAZE decoding path; old scr
 
 The two nodes, `gazedinoengine.py`, `screengaze.py` and `gazeartifact.py` have module-level imports, camelCase internal names and underscore-prefixed private instance state. `estimate` is a public framework signal, following other tickers. Public JSON keys and third-party API keyword names retain their established contracts.
 
-`GazeDinoEngine(object)` is in `N2uCore/inference/gazedinoengine.py`. It builds the existing network from standard `nn.Sequential` layers; no extra model subclass is introduced. The network still predicts only yaw and pitch. Head roll comes from MediaPipe landmarks 33 and 263, using pixel aspect ratio and the clockwise-positive image convention. Missing or degenerate landmarks produce null roll; retraining is unnecessary for this head-pose measurement. Roll is not a third learned gaze angle.
+`GazeDinoEngine(object)` is in `N2uCore/inference/gazedinoengine.py`. It builds the existing network from standard `nn.Sequential` layers; no extra model subclass is introduced. The network still predicts only yaw and pitch. Head roll comes from the FaceLandmarker landmarks 33 and 263 (given by the tracking node), using pixel aspect ratio and the clockwise-positive image convention. Missing or degenerate landmarks produce null roll; retraining is unnecessary for this head-pose measurement. Roll is not a third learned gaze angle.
 
 ## Compute resources and unchanged consumers
 

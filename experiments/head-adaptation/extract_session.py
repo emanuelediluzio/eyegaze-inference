@@ -3,8 +3,8 @@
     python extract_session.py N2UCORE_DIR CHECKPOINT SESSION_DIR [--stride 2] [--student CKPT | --coreml PKG] [--out NAME.npz]
 
 SESSION_DIR has frames/NNNNNN.jpg, log.jsonl (frame time, phase, target) and screen.json. Every --stride-th frame
-(2: about 15 FPS, as Iride live) goes through N2uCore's GazeDinoEngine (FaceMesh, face crop, GazeDINO, smoothing,
-iris), so the angles are the ones the screen calibration gets. Hooks on the head read, for the same frame, the DINOv2
+(2: about 15 FPS, as Iride live) goes through N2uCore's GazeDinoEngine (landmarks as the tracking node gives them,
+face crop, GazeDINO, smoothing, iris), so the angles are the ones the screen calibration gets. Hooks on the head read, for the same frame, the DINOv2
 CLS token (768), the input of the last head layer (128) and the unsmoothed angles. Frames where the model did not
 run (no face, blink: the engine repeats the last estimate) have fresh = False. Output: SESSION_DIR/features.npz.
 """
@@ -15,6 +15,9 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tracking_landmarks import TrackingLandmarks  # noqa: E402
 
 
 def studentModel(checkpoint, backbone):
@@ -69,6 +72,7 @@ def main():
         sys.exit("cannot load GazeDINO")
     if args.student:
         engine._model = studentModel(args.student, args.backbone).eval().to(engine._device, engine._dtype)
+    landmarks = TrackingLandmarks(args.n2ucore)
     seen = {}
     if args.coreml or not hasattr(engine._model, "head"):   # Core ML: no head to hook, only the angles are saved
         if args.coreml:
@@ -87,7 +91,7 @@ def main():
     for n, r in enumerate(log):
         seen.clear()
         rgb = cv2.cvtColor(cv2.imread(str(session / "frames" / f"{r['i']:06d}.jpg")), cv2.COLOR_BGR2RGB)
-        s = engine.analyze(rgb, r["mono"] * 1e6) or {"status": "error"}
+        s = engine.analyze(rgb, landmarks(rgb), r["mono"] * 1e6) or {"status": "error"}
         ok = s.get("status") == "ok"
         for key in ("i", "t", "phase", "k", "x", "y", "mono"):
             rows[key].append(r[key])

@@ -1,19 +1,20 @@
 """Tests for the real-time quality of the gaze nodes.
 
-  a. ``GazeDinoEngine._nearestFace``: the biggest (nearest) face, kept while followed unless another
-     is clearly bigger; a face cut by the border is flagged;
+  a. ``GazeDinoEngine._faceBox``: the face box in pixels from the tracking node's landmarks; a face cut by
+     the border is flagged;
   b. ``GazeDinoEngine._quality``: score and hint from face size (move_closer / move_back)
      and from the jitter of the raw estimate (unstable), a steady head turn not counting;
   c. ``GazeDinoEngine._eyeGeometry``: eye midpoint and 3D eye-corner distance (camera distance);
   c2. ``GazeDinoEngine.analyze``: the smoothing weight follows the time between estimates;
-  c3. ``GazeDinoEngine.analyze``: with the eyes closed (blink) the last estimate is kept;
+  c3. ``GazeDinoEngine.analyze``: with the eyes closed (blink) the last estimate is kept; the all-zero mesh of
+      the tracking node is no face, a mesh of another size is refused;
   c4. ``GazeDinoEngine._predictCrop``: the crop reaches the model in its precision (fp16 on a GPU), angles in float;
   c5. ``GazeDinoEngine._loadCoreML``: a Core ML package runs on all compute units (CPU only with the CPU device),
       takes the crop as fp32 and gives float angles;
   d. ``ScreenPointOfGaze._process``: the upstream quality travels with the point.
 
-Built without model, camera or event loop (``__new__`` + attributes, SimpleNamespace
-landmarks), like tests/dyn/test_eyegaze.py.
+Built without model, camera or event loop (``__new__`` + attributes, landmarks as the (478, 3) float32 array
+of the Landmarks channel), like tests/dyn/test_eyegaze.py.
 
 Run from project root:
     python3 -m unittest tests.dyn.test_gaze_quality -v
@@ -36,8 +37,8 @@ from N2uCore.inference.gazedinoengine import GazeDinoEngine
 
 
 def face(x1, y1, x2, y2):
-    """Landmarks of a face filling the normalized box (two corner points are enough), as FaceLandmarker gives them."""
-    return [SimpleNamespace(x=x1, y=y1), SimpleNamespace(x=x2, y=y2)]
+    """Landmarks of a face filling the normalized box (two corner points are enough), as the Landmarks channel."""
+    return np.array([[x1, y1, 0.0], [x2, y2, 0.0]], np.float32)
 
 
 def engine():
@@ -47,35 +48,19 @@ def engine():
     return e
 
 
-class TestNearestFace(unittest.TestCase):
-    def test_biggest_face_is_chosen(self):
-        far, near = face(0.05, 0.1, 0.15, 0.3), face(0.5, 0.2, 0.8, 0.7)
-        points, box, edge = engine()._nearestFace([far, near], 640, 480)
-        self.assertIs(points, near)
+class TestFaceBox(unittest.TestCase):
+    def test_box_in_pixels(self):
+        box, edge = engine()._faceBox(face(0.5, 0.2, 0.8, 0.7), 640, 480)
         self.assertEqual(box, [320, 96, 512, 336])
         self.assertFalse(edge)
 
-    def test_followed_face_is_kept_against_a_similar_one(self):
-        e = engine()
-        followed, other = face(0.1, 0.2, 0.4, 0.6), face(0.55, 0.2, 0.87, 0.62)   # other ~7% bigger
-        e._bbox = [64, 96, 256, 288]
-        points, _, _ = e._nearestFace([other, followed], 640, 480)
-        self.assertIs(points, followed)
-
-    def test_clearly_bigger_face_takes_over(self):
-        e = engine()
-        followed, near = face(0.1, 0.2, 0.3, 0.45), face(0.5, 0.1, 0.9, 0.8)
-        e._bbox = [64, 96, 192, 216]
-        points, _, _ = e._nearestFace([followed, near], 640, 480)
-        self.assertIs(points, near)
-
     def test_face_cut_by_the_border_is_flagged(self):
-        _, box, edge = engine()._nearestFace([face(-0.1, 0.2, 0.3, 0.7)], 640, 480)
+        box, edge = engine()._faceBox(face(-0.1, 0.2, 0.3, 0.7), 640, 480)
         self.assertTrue(edge)
         self.assertEqual(box[0], 0)
 
-    def test_empty_boxes_are_skipped(self):
-        self.assertEqual(engine()._nearestFace([face(0.5, 0.5, 0.5, 0.5)], 640, 480), (None, None, False))
+    def test_empty_box_is_no_face(self):
+        self.assertEqual(engine()._faceBox(face(0.5, 0.5, 0.5, 0.5), 640, 480), (None, False))
 
 
 class TestQuality(unittest.TestCase):
@@ -146,14 +131,14 @@ class TestEyeGeometry(unittest.TestCase):
     def landmarks(self, depth=0.0, lid=0.01):
         """478 points with the eye corners 33, 133, 362, 263 and the lids set; ``depth``: z of the outer right
         corner; ``lid``: lid distance from the corner line (0.01: eye aspect ratio 0.3 at 640x480, 0: closed)."""
-        points = [SimpleNamespace(x=0.5, y=0.5, z=0.0) for _ in range(478)]
-        points[33] = SimpleNamespace(x=0.40, y=0.40, z=0.0)
-        points[133] = SimpleNamespace(x=0.45, y=0.40, z=0.0)
-        points[362] = SimpleNamespace(x=0.55, y=0.40, z=0.0)
-        points[263] = SimpleNamespace(x=0.60, y=0.40, z=depth)
+        points = np.tile(np.array([0.5, 0.5, 0.0]), (GazeDinoEngine.MESH_POINTS, 1))
+        points[33] = [0.40, 0.40, 0.0]
+        points[133] = [0.45, 0.40, 0.0]
+        points[362] = [0.55, 0.40, 0.0]
+        points[263] = [0.60, 0.40, depth]
         for upper, lower, x in ((160, 144, 0.42), (158, 153, 0.43), (385, 380, 0.57), (387, 373, 0.58)):
-            points[upper] = SimpleNamespace(x=x, y=0.40 - lid, z=0.0)
-            points[lower] = SimpleNamespace(x=x, y=0.40 + lid, z=0.0)
+            points[upper] = [x, 0.40 - lid, 0.0]
+            points[lower] = [x, 0.40 + lid, 0.0]
         return points
 
     def test_midpoint_and_span_in_pixels(self):
@@ -171,8 +156,8 @@ class TestEyeGeometry(unittest.TestCase):
     def irises(self, dx=0.0, dy=0.0):
         """landmarks with both irises in the middle of their eye, moved by ``dx``, ``dy`` (image fractions)."""
         points = self.landmarks()
-        points[468] = SimpleNamespace(x=0.425 + dx, y=0.40 + dy, z=0.0)
-        points[473] = SimpleNamespace(x=0.575 + dx, y=0.40 + dy, z=0.0)
+        points[468] = [0.425 + dx, 0.40 + dy, 0.0]
+        points[473] = [0.575 + dx, 0.40 + dy, 0.0]
         return points
 
     def test_iris_in_the_middle_of_both_eyes(self):
@@ -214,14 +199,13 @@ class TestCoreML(unittest.TestCase):
 class TestSmoothing(unittest.TestCase):
     def analyze(self, e, yaw, ts, lid=0.01):
         e._predictCrop = MagicMock(return_value=np.array([yaw, 0.0]))
-        e._mesh.detect.return_value = SimpleNamespace(face_landmarks=[TestEyeGeometry.landmarks(None, lid=lid)])
-        return e.analyze(np.zeros((480, 640, 3), np.uint8), ts)["yaw_rad"]
+        mesh = TestEyeGeometry.landmarks(None, lid=lid).astype(np.float32)
+        return e.analyze(np.zeros((480, 640, 3), np.uint8), mesh, ts)["yaw_rad"]
 
     def engine(self):
         e = engine()
         e._alpha = 0.25
         e._ema = e._emaEyes = e._emaTs = e._last = None
-        e._mesh = MagicMock()
         return e
 
     def test_alpha_is_the_weight_at_15_estimates_per_second(self):
@@ -240,7 +224,7 @@ class TestSmoothing(unittest.TestCase):
         self.analyze(e, 0.0, 0)
         iris = e._last["iris"]
         self.assertEqual(len(iris), 3)
-        self.assertAlmostEqual(iris[2], 0.3)       # eye aspect ratio of the open lids of the landmarks
+        self.assertAlmostEqual(iris[2], 0.3, places=5)   # eye aspect ratio of the open lids (float32 landmarks)
 
     def test_open_eyes_are_not_a_blink(self):
         self.assertAlmostEqual(engine()._eyeOpening(TestEyeGeometry.landmarks(None), 640, 480), 0.3)
@@ -261,6 +245,21 @@ class TestSmoothing(unittest.TestCase):
     def test_blink_on_the_first_estimate_is_still_used(self):
         # nothing to keep yet
         self.assertEqual(self.analyze(self.engine(), 1.0, 0, lid=0.0), 1.0)
+
+    def test_zero_mesh_is_no_face(self):
+        # the tracking node publishes all zeros when it finds no face
+        e = self.engine()
+        e._predictCrop = MagicMock()
+        mesh = np.zeros((GazeDinoEngine.MESH_POINTS, 3), np.float32)
+        self.assertEqual(e.analyze(np.zeros((480, 640, 3), np.uint8), mesh, 0), {"status": "no_face"})
+        e._predictCrop.assert_not_called()
+
+    def test_mesh_without_irises_is_refused(self):
+        # 468 points: a tracking channel without the irises
+        e = self.engine()
+        e._predictCrop = MagicMock()
+        self.assertIsNone(e.analyze(np.zeros((480, 640, 3), np.uint8), np.ones((468, 3), np.float32), 0))
+        e._predictCrop.assert_not_called()
 
 
 class TestPrecision(unittest.TestCase):
