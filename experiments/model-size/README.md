@@ -1,10 +1,10 @@
 # Model size and speed: Core ML, weight quantization, distilled student
 
-**Status (2026-11-18):**
+**Status (2026-11-23):**
 
 - **Adopted on macOS:** GazeDINO ViT-B/14 as Core ML with int8 weights. It weighs 87 MB instead of 324 MB, its accuracy is the same, and the model is about 10× faster.
 - **Not adopted:** 4-bit palettization, which loses accuracy.
-- **Not adopted:** the distilled ViT-S student, which loses on real faces. Distillation v2 is ready (`distill_gaze_v2.py`).
+- **Not adopted:** the distilled ViT-S student. Distillation v2 reaches the teacher on MPIIFaceGaze people it never saw (6.84° against 6.90°), but on the recorded sessions it loses when the head comes closer or looks down (146 and 243 px against 102 and 180 px).
 
 ## Data
 
@@ -29,6 +29,8 @@ Times are measured on an M1 MacBook, model alone, batch 1. Core ML times use all
 | ViT-S student, PyTorch | 89 MB | 39 ms | 8.59° | 6.64° | 93 / 89 / 207 |
 | ViT-S student, Core ML int8 | 22 MB | 4 ms | 8.58° | 6.64° | 93 / 88 / 206 |
 
+The student rows above are v1 with the engine's own FaceLandmarker. The v2 results, with the tracking node's landmarks, are in the next section.
+
 The int8 joblib row was measured with FaceLandmarker (`../face-landmarker`). The float32 joblib with FaceLandmarker gives 8.32° / 6.32° on MPII and 93 / 65 / 186 px on the sessions, so int8 changes nothing there either. Frame by frame, the int8 angles are 0.25° from the float32 ones on average (max 0.6°).
 
 On an M1 Mac mini, the whole engine step (face landmarks, crop and model) takes 19.7 ms with the int8 package, against 68.3 ms with PyTorch (`../face-landmarker/bench_engine.py`).
@@ -42,6 +44,26 @@ On an M1 Mac mini, the whole engine step (face landmarks, crop and model) takes 
 - a longer schedule at a higher learning rate;
 - an EMA of the weights;
 - the best checkpoint is chosen on the gap to the teacher for p10–p14.
+
+**Distillation v2 results (2026-11-23).** The run started from v1 and stopped by itself at epoch 12: the best checkpoint is epoch 2. Training was restarted several times by Mac mini resets; the kept run is 2d, which started from the epoch-1 checkpoint of an earlier run. Its gap to the teacher on the p10–p14 crops went from 2.54° (v1) to 2.02°, and its error on GazeGene validation went from 3.27° to 3.37° (teacher 2.22°).
+
+MPIIFaceGaze calibrated error, all with the tracking node's landmarks. v2 was trained on crops of p00–p09, so only p10–p14 are unseen:
+
+| Model | All 15 people | p10–p14 (unseen by v2) | p00–p09 |
+|---|---|---|---|
+| Teacher ViT-B | 6.31° | 6.90° | 5.99° |
+| Student v1 | 6.49° | 7.07° | 6.22° |
+| **Student v2** | **6.26°** | **6.84°** | 5.99° |
+
+Recorded sessions, screen px, target error averaged over the two sessions:
+
+| Model | cv | still | back | left | closer | down |
+|---|---|---|---|---|---|---|
+| Teacher ViT-B | 91 | 63 | 115 | 136 | 102 | 180 |
+| Student v1 | 102 | 89 | 124 | 143 | 128 | 207 |
+| Student v2 | 89 | 81 | 118 | 122 | 146 | 243 |
+
+v2 closes the gap on real frontal faces, and on the sessions it is better than v1 when still, back and left. It is worse when the head comes closer or looks down: on session 3 it gives 176 px against 100 px for the teacher when closer, and 280 px against 192 px when looking down. The real crops come only from MPIIFaceGaze, frontal faces at a laptop, which has few such head poses. The next step would add real crops with the head closer and tilted down, keeping the evaluation sessions out of training. Two sessions are a small sample.
 
 ## Scripts
 
@@ -63,3 +85,5 @@ Outputs are in `~/n2u_training_data/gazemodelsize-20261118`:
 - `bench_coreml_macbook.txt`;
 - `evals.txt`, the full MPII and session results;
 - the `.mlpackage` files.
+
+The v2 evaluation is in `~/n2u_training_data/gazedistill-20261123`: `run_eval_v2.sh`, `eval_v2.txt`, the MPII `.npz` files and `student_v2_best.pt`.
