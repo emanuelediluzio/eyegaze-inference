@@ -68,10 +68,12 @@ Recorded sessions 2 and 3, screen px, target error averaged over the two session
 | Student v1 | 102 | 89 | 124 | 143 | 128 | 207 |
 | Student v2 | 89 | 81 | 118 | 122 | 146 | 243 |
 | **Student v3** | **79** | **69** | **119** | **119** | **108** | **196** |
+| Student v3, Core ML int8 | 78 | 68 | 118 | 121 | 107 | 197 |
 
 - Compared with v2, v3 is better when closer (146 to 108 px) and looking down (243 to 196 px). On session 3 these go from 176 to 121 px and from 280 to 206 px.
 - Against the teacher, v3 is within 6 px when still and closer, within 16 px when looking down, and better on cv and left.
 - On MPII it stays at the teacher's level.
+- The Core ML int8 package (`../model-size/export_coreml.py`, `student_v3_w8.mlpackage`, 22 MB against 83 MB for the teacher's) keeps these results: 6.25° on MPII, and the session row above.
 
 **Caveats:**
 
@@ -81,7 +83,8 @@ Recorded sessions 2 and 3, screen px, target error averaged over the two session
 ## Files
 
 - Mac mini: `~/training_mini/gazedistill/run_distill3.sh`, `log/distill3.log`, checkpoints in `code/checkpoints/distill3_20261124_002445`; crops in `~/n2u_training_data/gazedistill3-crops`; recordings in `~/n2u_training_data/gazefree-*`.
-- MacBook: `~/n2u_training_data/gazedistill-20261124`, with `student_v3_best.pt`, `run_eval_v3.sh`, `eval_v3.txt` and `mpii_student_v3.npz`.
+- MacBook: `~/n2u_training_data/gazedistill-20261124`, with `student_v3_best.pt`, `run_eval_v3.sh`, `eval_v3.txt` and `mpii_student_v3.npz`; the Core ML packages in `coreml/`, checked by `run_eval_v3_w8.sh` (`eval_v3_w8.txt`).
+- Mac mini live test: `student_v3_w8.mlpackage` is copied to `N2uCore/res/models/gazedino/model.mlpackage`, the file the gaze node loads on macOS; the teacher's package is kept as `teacher_vitb_w8.mlpackage`.
 
 ```bash
 python record_free.py OUT_DIR [camera]
