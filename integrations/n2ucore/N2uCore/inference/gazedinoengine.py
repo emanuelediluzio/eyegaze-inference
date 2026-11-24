@@ -11,7 +11,7 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 
 from N2uCore import log
-from N2uCore.inference.gazeartifact import loadModelState
+from N2uCore.inference.gazeartifact import architectureOf, loadModelState
 from N2uCore.dyn.wrk.memprovider import releaseComputeCache, resolveComputeResources
 
 
@@ -98,10 +98,14 @@ class GazeDinoEngine(object):
         if not (hubSource / "hubconf.py").is_file():
             log.err("Install DINOv2 in the local Torch Hub cache before starting GazeDINO")
             return False
-        model = self._buildModel(hubSource)
         modelState = loadModelState(self._checkpoint)
         if modelState is None:
             return False
+        architecture = architectureOf(modelState)
+        if architecture is None:
+            log.err("Neither the ViT-B GazeDINO nor its ViT-S student: {}".format(self._checkpoint))
+            return False
+        model = self._buildModel(hubSource, architecture)
         model.load_state_dict(modelState, strict=True)
         del modelState
         self._dtype = torch.float16 if self._device.type in self.HALF_DEVICES else torch.float32
@@ -122,11 +126,13 @@ class GazeDinoEngine(object):
         self._model = CoreMLGaze(ct.models.MLModel(str(self._checkpoint), compute_units=units))
         return True
 
-    def _buildModel(self, hubSource):
-        backbone = torch.hub.load(str(hubSource), "dinov2_vitb14", source="local", pretrained=False)
+    def _buildModel(self, hubSource, architecture):
+        # the ViT-B teacher or the ViT-S student: same head, the trunk width changes
+        backbone = torch.hub.load(str(hubSource), architecture["backbone"], source="local", pretrained=False)
+        width = architecture["head_dims"][0]
         head = nn.Sequential(
-            nn.LayerNorm(768),
-            nn.Linear(768, 512),
+            nn.LayerNorm(width),
+            nn.Linear(width, 512),
             nn.GELU(),
             nn.Dropout(0.3),
             nn.Linear(512, 128),

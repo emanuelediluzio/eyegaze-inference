@@ -16,6 +16,9 @@ FORMAT_INT8 = "n2u.gazedino.inference.v1-int8"  # weight matrices as int8, one f
                                                 # instead of 324, same angles (MPIIFaceGaze 6.37 vs 6.35 deg)
 SCALE = "@scale"                                # state_dict key of the scales of the int8 tensor <name>
 ARCHITECTURE = {"name": "GazeDINO", "backbone": "dinov2_vitb14", "head_dims": [768, 512, 128, 2]}
+# the ViT-S student distilled from it (eyegaze-inference experiments/distill-v3): same head on a 384-wide trunk
+ARCHITECTURE_SMALL = {"name": "GazeDINO", "backbone": "dinov2_vits14", "head_dims": [384, 512, 128, 2]}
+ARCHITECTURES = {a["head_dims"][0]: a for a in (ARCHITECTURE, ARCHITECTURE_SMALL)}
 PREPROCESSING = {
     "color": "RGB",
     "size": [224, 224],
@@ -45,7 +48,6 @@ def validateArtifact(value):
             log.err("Unsupported GazeDINO inference artifact")
             return None
         for name, expected in [
-            ("architecture", ARCHITECTURE),
             ("preprocessing", PREPROCESSING),
             ("output", OUTPUT),
         ]:
@@ -55,6 +57,11 @@ def validateArtifact(value):
         state = value["state_dict"]
         if not isinstance(state, dict) or not state:
             log.err("Missing GazeDINO weights")
+            return None
+        # weights that tell their width must match the declared architecture (a ViT-S student declared as ViT-B)
+        if value["architecture"] not in ARCHITECTURES.values() or \
+                architectureOf(state) not in (None, value["architecture"]):
+            log.err("Incompatible GazeDINO architecture")
             return None
         int8 = value["format"] == FORMAT_INT8
         for name, array in state.items():
@@ -98,6 +105,12 @@ def validateArtifact(value):
     except Exception as exc:
         log.err("validateArtifact: {}".format(exc))
         return None
+
+
+def architectureOf(state):
+    """ViT-B teacher or ViT-S student, from the width of the head's first layer (LayerNorm), or None."""
+    weight = state.get("head.0.weight")
+    return ARCHITECTURES.get(weight.shape[0]) if weight is not None and weight.ndim == 1 else None
 
 
 def loadModelState(path):
@@ -156,13 +169,14 @@ def exportInference(source, destination, int8=False):
             log.err("Expected a float32 model state_dict")
             return None
         weights = {name: tensor.detach().cpu().numpy() for name, tensor in state.items()}
+        architecture = architectureOf(weights) or ARCHITECTURE
         if int8:
             for name in [n for n, a in weights.items() if n.endswith(".weight") and a.ndim >= 2]:
                 weights[name], weights[name + SCALE] = quantize(weights[name])
         artifact = validateArtifact(
             {
                 "format": FORMAT_INT8 if int8 else FORMAT,
-                "architecture": ARCHITECTURE.copy(),
+                "architecture": architecture.copy(),
                 "preprocessing": PREPROCESSING.copy(),
                 "output": OUTPUT.copy(),
                 "state_dict": weights,

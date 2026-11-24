@@ -2,6 +2,8 @@
 
 Status 2026-11-24. The v3 student (ViT-S) reaches the teacher (ViT-B) on MPIIFaceGaze and on the recorded sessions, including the poses where v2 was worse: head closer and looking down.
 
+In N2uCore_dev since 48d5f63: the GazeDirection node runs this student when its device is CPU (`student.joblib`, or `student.mlpackage` on macOS) and the ViT-B when it is GPU. On an M1 CPU the student takes 40 ms a face against 133 ms for the ViT-B joblib. Tested live in Iride on the Mac mini with both devices.
+
 ## Why
 
 v2 (`../model-size`) closed the gap to the teacher on real frontal faces, but on the recorded sessions it was worse than the teacher when the head came closer (146 px against 102 px) or looked down (243 px against 180 px). Its real crops came only from MPIIFaceGaze, frontal faces at a laptop.

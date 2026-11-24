@@ -30,6 +30,10 @@ class GazeDirectionTicker(MlTicker):
 
     MODEL_PATH = "models/gazedino/model.joblib"
     COREML_PATH = "models/gazedino/model.mlpackage"   # macOS: the int8 Core ML export, used when present
+    # device CPU: the ViT-S student distilled from the model (eyegaze-inference experiments/distill-v3), 4x smaller
+    # and ~2.5x faster, same accuracy on MPIIFaceGaze (6.25 vs 6.31 deg) and on the recorded sessions
+    STUDENT_PATH = "models/gazedino/student.joblib"
+    STUDENT_COREML_PATH = "models/gazedino/student.mlpackage"
     FOOTPRINT = 700 * 1024**2     # ViT-B/14 + head + face mesh
 
     RETRY_SECS = 30
@@ -50,7 +54,9 @@ class GazeDirectionTicker(MlTicker):
 
     def _loadModel(self) -> bool:
         self._engine = GazeDinoEngine(self._modelPath, deviceName=self._deviceName)
-        self._modelLabel = "GazeDINO ViT-B/14" + (" Core ML" if self._modelPath.endswith(".mlpackage") else "")
+        student = Path(self._modelPath).stem == "student"
+        self._modelLabel = "GazeDINO " + ("ViT-S/14 student" if student else "ViT-B/14") + \
+            (" Core ML" if self._modelPath.endswith(".mlpackage") else "")
         return self._engine.load()
 
     def _unloadModel(self) -> None:
@@ -132,19 +138,22 @@ class GazeDirection(MlDevice):
     def _tickerArgs(self) -> dict:
         return {
             "memProvider": self._memProvider,
-            "modelPath": self._modelFile(),
+            "modelPath": self._modelFile(self._props["device"] == "CPU"),
             "deviceName": self._device,
             "idleTimeoutSecs": 600,
         }
 
     @staticmethod
-    def _modelFile() -> str:
-        # on macOS the Core ML export (same angles, 87 MB, ~10x faster model) when it and coremltools are there
+    def _modelFile(student: bool) -> str:
+        # device CPU: the distilled student; GPU: the model. On macOS the Core ML export of either (same angles,
+        # ~10x faster model) when it and coremltools are there
+        weights, coreml = (GazeDirectionTicker.STUDENT_PATH, GazeDirectionTicker.STUDENT_COREML_PATH) if student \
+            else (GazeDirectionTicker.MODEL_PATH, GazeDirectionTicker.COREML_PATH)
         if sys.platform == "darwin" and importlib.util.find_spec("coremltools") is not None:
-            path = ResourceManager().absolutePath(GazeDirectionTicker.COREML_PATH)
+            path = ResourceManager().absolutePath(coreml)
             if path and Path(path).exists():
                 return path
-        return ResourceManager().absolutePath(GazeDirectionTicker.MODEL_PATH)
+        return ResourceManager().absolutePath(weights)
 
     def _onInit(self) -> bool:
         source = "{}.{}".format(self._imgSource["node"], self._imgSource["channel"])

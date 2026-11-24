@@ -4,7 +4,8 @@
 
 - **Adopted on macOS:** GazeDINO ViT-B/14 as Core ML with int8 weights. It weighs 87 MB instead of 324 MB, its accuracy is the same, and the model is about 10× faster.
 - **Not adopted:** 4-bit palettization, which loses accuracy.
-- **Not adopted:** the distilled ViT-S student. Distillation v2 reaches the teacher on MPIIFaceGaze people it never saw (6.84° against 6.90°), but on the recorded sessions it loses when the head comes closer or looks down (146 and 243 px against 102 and 180 px).
+- **Adopted on the CPU device (2026-11-24):** the distilled ViT-S student of distillation v3 (`../distill-v3`), N2uCore_dev 48d5f63. The GPU device keeps the ViT-B.
+- **Not adopted (v2):** the distilled ViT-S student. Distillation v2 reaches the teacher on MPIIFaceGaze people it never saw (6.84° against 6.90°), but on the recorded sessions it loses when the head comes closer or looks down (146 and 243 px against 102 and 180 px).
 
 ## Data
 
