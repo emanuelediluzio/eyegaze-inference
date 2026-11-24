@@ -65,6 +65,8 @@ Recorded sessions, screen px, target error averaged over the two sessions:
 
 v2 closes the gap on real frontal faces, and on the sessions it is better than v1 when still, back and left. It is worse when the head comes closer or looks down: on session 3 it gives 176 px against 100 px for the teacher when closer, and 280 px against 192 px when looking down. The real crops come only from MPIIFaceGaze, frontal faces at a laptop, which has few such head poses. The next step would add real crops with the head closer and tilted down, keeping the evaluation sessions out of training. Two sessions are a small sample.
 
+Distillation v3 (2026-11-24, `../distill-v3`) did that with two free-pose webcam sessions and reaches the teacher: 108 px closer and 196 px down on the sessions, 6.24° on MPII.
+
 ## Scripts
 
 ```bash
