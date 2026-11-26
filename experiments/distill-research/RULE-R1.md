@@ -165,3 +165,24 @@ Only the images with the eye-tracking glasses inpainted are used. There is never
 - A frame without an inpainted image is not used.
 - A person with no inpainted images is excluded from both groups (distillation and test), and the exclusion is reported.
 - A person stays in the group `split_rtgene.py` gives them: an excluded person is not replaced.
+
+## Clarification: RT-GENE people and images (2026-11-26, third commit, before the split is run)
+
+The split still goes by person. This only makes "person" exact for RT-GENE, from its `README_Dataset.md`:
+
+- 15 participants were recorded in 17 sessions, s000–s016;
+- **session s014 is participant s002 again**, and **s015 is participant s005 again**, on different days with different camera poses.
+
+`split_rtgene.py` therefore splits the 15 people, not the 17 sessions. s014 goes with s002 and s015 with s005, so both sessions of a person are always in the same group.
+
+**Images used** for distillation and test alike: those in `inpainted/face_after_inpainting` of the `sNNN_glasses` sessions. They are the face with a wide margin and the glasses inpainted, so Iride's landmark box fits inside them.
+
+**Not used in R1:**
+
+- the MTCNN crops (`inpainted/face`): their tight margin would cut the landmark box;
+- the images with the glasses (`original/`);
+- the `sNNN_noglasses` sessions, even for distillation people.
+
+**Labels:** the test labels are the gaze columns of `label_combined.txt`, matched to the images by sequence number. The head pose bands use its head pose columns.
+
+**Data on the volume:** the data are tar archives (inside `RT-GENE dataset.zip`, and three loose copies). They are extracted on the Mac mini into `/Volumes/RT-GENE-data`, only for the distillation people's sessions until the baseline step. The test people's archives are opened only for the test.
