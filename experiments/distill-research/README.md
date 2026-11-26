@@ -54,7 +54,16 @@ The rule is in `RULE-R1.md`. In short:
 
 ### RT-GENE split
 
-To be filled by `split_rtgene.py` once the MD5 check of the volume is confirmed (35/35), and committed before any RT-GENE image is read.
+The split was made by `split_rtgene.py` on 2026-11-26, after the volume's MD5 check passed 35/35. It read names only: the volume's entries and the member names of `RT-GENE dataset.zip`. It was committed before any RT-GENE image was read.
+
+There are 17 sessions of 15 people: s014 is s002 recorded again, and s015 is s005.
+
+| Group | People | Sessions |
+|---|---|---|
+| **Test** (true labels, never seen before the test) | 8: s003, s004, s005, s006, s009, s011, s012, s016 | the same, plus s015 (s005) |
+| **Distillation** (unlabelled, teacher labels) | 7: s000, s001, s002, s007, s008, s010, s013 | the same, plus s014 (s002) |
+
+A person with no inpainted faces is excluded from their group, without replacement. Exclusions will be listed here.
 
 ### AVCAffe crops
 
@@ -64,7 +73,7 @@ To be filled by `split_rtgene.py` once the MD5 check of the volume is confirmed 
   - the frame index;
   - the face size;
   - the head yaw and pitch from FaceLandmarker's transformation matrix.
-- **Storage:** FAT32 holds few entries per directory, and small files read slowly from the USB disk. So crops go in one `.npz` per person: the JPEG bytes and the per-crop fields. Training reads them once, into memory.
+- **Storage:** FAT32 holds few entries per directory, and small files read slowly from the USB disk. So crops go in one `.npz` per person: the JPEG bytes (about 10–13 KB a crop, 13–23 MB a person in the pilot) and the per-crop fields. Training reads them once, into memory.
 - **Pilot first:** 2 training people. Check the crop yield and the face sizes, and look at a few crops on the Mac mini screen. Only then extract all.
 
 ### Steps
