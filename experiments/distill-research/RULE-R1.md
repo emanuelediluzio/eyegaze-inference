@@ -186,3 +186,11 @@ The split still goes by person. This only makes "person" exact for RT-GENE, from
 **Labels:** the test labels are the gaze columns of `label_combined.txt`, matched to the images by sequence number. The head pose bands use its head pose columns.
 
 **Data on the volume:** the data are tar archives (inside `RT-GENE dataset.zip`, and three loose copies). They are extracted on the Mac mini into `/Volumes/RT-GENE-data`, only for the distillation people's sessions until the baseline step. The test people's archives are opened only for the test.
+
+## Clarification: AVCAffe people with few crops (2026-11-26, before the full extraction)
+
+An AVCAffe person with **fewer than 300 kept crops** in total, over all their tasks, is excluded from their group (distillation or checkpoint selection). The person is listed in `README.md`, without replacement.
+
+- The threshold was fixed after the 2-person pilot and before the full extraction.
+- The pilot's people had 1,744 and 1,276 crops.
+- The README reports kept and sampled crops per person and per task.
