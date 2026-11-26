@@ -101,3 +101,67 @@ If any fails, R1 is reported as not better than v3. The numbers are written in `
 - RT-GENE derived files stay on the Mac mini, under `/Volumes/RT-GENE-data/`.
 - R1 checkpoints and logs stay on the Mac mini's HARD DISK.
 - This repository gets code and numbers only.
+
+## Clarifications (2026-11-26, second commit, before any extraction)
+
+These make the rule above precise. They do not change the criterion. Where they are more precise than a sentence above, they govern.
+
+### What the teacher was trained on
+
+The teacher is `best_run3_3.24deg.pt`. Its sha256 begins with `b68131063b6475f8`, and it is the same file on the MacBook, on the Mac mini (`~/training_mini/gazedistill/teacher/`) and in this repository's `checkpoints/`.
+
+- **Training repository:** [eye-gaze](https://github.com/emanuelediluzio/eye-gaze), `train_gaze.py`, which loads data only through `data/gazegene_loader.py`. No real-face dataset appears in its code.
+- **Run 3:** phase 2 only, resumed from Run 2, which comes from Run 1. All three are GazeGene (`results.md` there). Run 3 used 50 subjects × 9 cameras × 200 frames, validation error 3.24°, epoch 49.
+- **GazeGene** is synthetic: rendered faces, no real person.
+- **Backbone:** the DINOv2 ViT-B/14 weights of `facebookresearch/dinov2`, self-supervised on LVD-142M (web images, no labels). We cannot rule out that a web photo of someone in these datasets is among those images, but no gaze label comes with it.
+
+So the teacher has never been trained on MPIIFaceGaze, RT-GENE or AVCAffe. Its predictions carry no label of the test people, and **both tests stand**: MPIIFaceGaze p10–p14 and the RT-GENE test people.
+
+The earlier students:
+
+- **v1:** distilled on GazeGene only.
+- **v2 and v3:** added the teacher-labelled crops of MPIIFaceGaze p00–p09 and, for v3, the session `gazefree-20261123-1615-emanuelediluzio`.
+- **Checkpoint selection:** v2 and v3 picked their checkpoint on the gap to the teacher over p10–p14 crops, without labels, and v3 also over Joel's session.
+- **RT-GENE:** no student has ever seen it.
+
+If any of this proves wrong for a test set, only the test sets the teacher has never seen are used. That would be written here in a new rule before any result is reported.
+
+### Test frames, the same for every model
+
+Frames are chosen from the file lists and labels only, before any model runs. The frames v3, R1 and the teacher are scored on are the same set.
+
+- **MPIIFaceGaze:** per person, 300 lines of `pXX.txt`, evenly spaced (`np.linspace(0, n − 1, 300)` rounded down), as in `eval_mpii.py`.
+- **RT-GENE:** per person, the frames that have both a label and an inpainted face image, in frame-number order. If there are more than 1,000, 1,000 of them are taken, evenly spaced in the same way.
+- **Landmark failures:** frames where the landmarks find no face, or that fail the face checks, are dropped. The landmarks do not depend on the gaze model, so the dropped frames are the same for every model. The scoring uses the frames valid for all models compared. Counts are reported.
+
+### Calibration frames are not test frames
+
+For a person with N valid test frames, the 16 calibration frames of draw k (k = 0…19) are drawn without replacement from 0…N−1 by `numpy.random.default_rng(seed)`.
+
+- **Seed:** the first 8 bytes of sha256(`"eyegaze-r1-cal:" + dataset + ":" + person + ":" + k`), as an unsigned integer.
+- **Same for every model:** the draws depend only on the person and N, never on the model or on other people, so v3, R1 and the teacher get the same 16 frames in every draw.
+- **Exclusion:** the error of draw k is measured only on the N − 16 frames not drawn. The 16 calibration frames never count in the error.
+- **A person's error:** the mean over the 20 draws.
+- **Bootstrap over a person's frames:** each frame's error is its mean over the draws in which it was not a calibration frame. Those per-frame errors are resampled.
+
+The R1 evaluation script implements exactly this, and v3 and the teacher are re-measured with it. No earlier number is reused in the comparison.
+
+### Checkpoint selection on AVCAffe `val.txt`
+
+There are no labels. The measure is the **distance from the teacher's predictions**:
+
+- per crop, the angle between the gaze directions predicted by the student and by the teacher;
+- per person, the mean over that person's selection crops;
+- then the mean over the 20 people, each weighing the same.
+
+**Selection crops:** per person, at most 500 of their AVCAffe crops, evenly spaced in time over all their tasks. They are fixed once, after extraction and before training, and are the same at every epoch.
+
+The checkpoint with the lowest value is kept. A tie goes to the earlier epoch. MPIIFaceGaze p10–p14, the RT-GENE test people and Joel are never part of this measure.
+
+### RT-GENE without inpainted faces
+
+Only the images with the eye-tracking glasses inpainted are used. There is never a fallback to the images with the glasses.
+
+- A frame without an inpainted image is not used.
+- A person with no inpainted images is excluded from both groups (distillation and test), and the exclusion is reported.
+- A person stays in the group `split_rtgene.py` gives them: an excluded person is not replaced.
