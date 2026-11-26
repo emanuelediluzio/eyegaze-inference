@@ -5,7 +5,7 @@ Status 2026-11-26: the rule for R1 is written (`RULE-R1.md`). Nothing has been e
 This is a research line, separate from the product student:
 
 - The product student is distillation v3 (`../distill-v3`), on the CPU device in N2uCore_dev since 48d5f63. Nothing here changes it.
-- The students trained here are called **R1, R2, …** (research), never v4. **They are research models**: every dataset they learn from is non-commercial only. They do not replace v3 in N2uCore without an explicit decision and a license check.
+- The students trained here are called **R1, R2, …**, never v4; a teacher fine-tuned on real labelled faces is **T1** (`RULE-T1.md`). Every real dataset they learn from is non-commercial only (table below), as MPIIFaceGaze in v3 already was. Their use in N2uCore is a separate decision.
 - Every stage has its rule, committed before its data is used: who is distilled, who is tested, and when the student beats v3.
 - Code, results and documentation stay in this repository, never in N2uCore_dev.
 
