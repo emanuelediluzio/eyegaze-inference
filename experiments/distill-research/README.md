@@ -223,6 +223,11 @@ Extracted 2026-11-26 (`export_crops_video.py`, one frame every 2 s): 135,464 cro
 3. Once RT-GENE is confirmed: commit the split, then crop the distillation half.
 4. Measure v3 and the teacher on the test sets: the baseline.
 5. Train R1 (`distill_gaze_r1.py`, started 2026-11-26 20:52 on the Mac mini: from v3's best checkpoint, 30 epochs at most, patience 8, 500 batches an epoch). Checkpoints and logs go on the HARD DISK.
+   - **Stop on 2026-11-27 04:20, during epoch 5 (exit 137, SIGKILL).** Cause, established: a memory leak in the trainer. `itertools.cycle` over the two real-crop loaders keeps every batch it yields, so the process grew by each batch. The Mac mini's own monitor (`~/jobqueue/monitor.log`, one line a minute) shows swap rising steadily from the start, from 2.2 GB at 20:00 to 42.1 GB at 04:00, about 5 GB an hour. At 04:20 swap fell back to 4.3 GB and free memory rose from 27% to 79%: the system killed the process when memory ran out.
+   - Fabio's `token_lm` run started at 04:05 and used about 0.7 GB; the growth had begun seven hours before it. The system log has no jetsam or memorystatus entry between 04:00 and 04:30.
+   - Fix: commit `efa378a`, which re-iterates the loaders instead of caching them. The 4 finished epochs are unaffected: the leak only held memory and changed no computation.
+   - R1 resumed on 2026-11-27 at 16:08 from `last.pt` after epoch 4, alone on the Mac mini, once Fabio's run had logged "ALL DONE". `last.pt` is written after every epoch, so a stop costs at most one epoch.
+   - Selection gap to the teacher, mean over the 20 AVCAffe selection people: v3 3.93°, then 3.34° (epoch 1), 3.22°, 3.19°, 3.16° (epoch 4). This is the selection measure, not a test result.
 6. Measure R1 and apply the criterion. Write the results here.
 
 ## R2: ETH-XGaze (when the link arrives)
