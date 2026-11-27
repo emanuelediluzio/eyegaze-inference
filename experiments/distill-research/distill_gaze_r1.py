@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import copy
 import csv
-import itertools
 import json
 import math
 import time
@@ -211,7 +210,11 @@ def main():
     if not state:
         csv_writer.writerow(["phase", "epoch", "loss", "label_err_deg", "teacher_gap_deg", "real_gap_deg", "cls_cos",
                              "patch_cos", "val_err_deg", "real_val_gap_deg", "lr", "seconds"])
-    avc_batches, other_batches = itertools.cycle(avc_loader), itertools.cycle(other_loader)
+    def forever(loader):
+        # not itertools.cycle: it keeps every batch it yields to replay them, so memory grows by each batch
+        while True:
+            yield from loader
+    avc_batches, other_batches = forever(avc_loader), forever(other_loader)
 
     def losses(imgs, t_preds, t_cls, t_patches):
         cls, patches = tokens(student.backbone, imgs)
